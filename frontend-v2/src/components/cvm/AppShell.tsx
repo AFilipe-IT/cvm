@@ -281,10 +281,10 @@ export function ProvenanceFooter() {
           </div>
         ))}
       </div>
-      <p className="mt-2 text-[11px] text-muted-foreground">
-        Every number on this console is reproducible from the engine version, knowledge base hash
-        and scoring model above.
-      </p>
+      {/* The reproducibility claim is made by the fields themselves — engine
+          version, KB hash, scoring model are all right there. Narrating them
+          in a sentence below added a line to every page and said nothing the
+          values did not. */}
     </footer>
   );
 }

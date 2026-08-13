@@ -136,10 +136,7 @@ export function JobConsole({
       <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
         <Info className="mt-0.5 size-3 shrink-0" />
         <span>
-          Jobs run inside the server process. They survive a browser refresh, but not a
-          server restart — <code className="font-mono">caspar serve --reload</code> kills
-          running jobs, so avoid <code className="font-mono">--reload</code> while a build
-          is in flight.
+          Survives a browser refresh, not a server restart.
         </span>
       </p>
     </div>

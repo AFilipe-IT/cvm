@@ -59,7 +59,7 @@ function TargetsPage() {
         <Panel>
           <EmptyState
             title="No targets registered"
-            hint="Targets appear here once a plugin is installed with `caspar plugin add`."
+            hint="Install a plugin to add targets"
             icon={<Crosshair className="size-5" />}
           />
         </Panel>

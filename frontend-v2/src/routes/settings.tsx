@@ -120,16 +120,17 @@ function ConsoleTab() {
           <div className="mt-4">
             <div className="section-label mb-2">Score scale</div>
             <ScoreScaleLegend />
+            {/* The legend shows the bands; what it cannot show is that 7.4 is
+                not 74%. That misreading is the only thing worth a sentence. */}
             <p className="mt-2 text-xs text-muted-foreground">
-              Scores measure risk. 0.0 means nothing was found; 10.0 means critical. It is not a
-              grade and not a percentage.
+              Risk, not a percentage or a grade.
             </p>
           </div>
         </div>
       </Panel>
 
       <Panel>
-        <PanelHeader title="API" hint="Read the same data this console renders" />
+        <PanelHeader title="API" />
         <div className="space-y-3 px-5 py-4">
           {[
             "GET /api/v1/posture",
@@ -152,20 +153,16 @@ function ConsoleTab() {
             </div>
           ))}
           {/* The engine has no bearer-token scheme, which the mock claimed.
-              Auth is off unless CASPAR_API_KEY is set on the server, and it
-              is an X-API-Key header applied to write routes only. */}
-          <p className="text-xs text-muted-foreground">
-            Read routes are open. If the server was started with{" "}
-            <code className="font-mono">CASPAR_API_KEY</code> set, write routes additionally
-            require an <code className="font-mono">X-API-Key</code> header.
-          </p>
+              Auth is off unless CASPAR_API_KEY is set, and it is an X-API-Key
+              header on write routes only. Not restated in prose here: the
+              Server tab renders `api_key_required` as a field, which is the
+              same fact as live data instead of a paragraph. */}
         </div>
       </Panel>
 
       <Panel className="xl:col-span-2">
         <PanelHeader
           title="Knowledge base"
-          hint="Read-only — replaced as a signed bundle"
           action={
             <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
               <Lock className="size-3" /> immutable
@@ -248,11 +245,11 @@ function ServerTab() {
                   </div>
                 ))}
               </dl>
-              <p className="mt-3 text-xs text-muted-foreground">
-                {/* Not an oversight worth a bug report — see schemas_manage.py. */}
-                Editing server configuration over HTTP is deliberately not offered: the API's
-                authentication is a no-op unless the server was started with an API key.
-              </p>
+              {/* Read-only by design, not an oversight worth a bug report:
+                  the API's auth is a no-op unless CASPAR_API_KEY is set, so
+                  editing server config over HTTP is deliberately not offered.
+                  See schemas_manage.py. Not restated here — the panel header
+                  already carries a "read-only" badge. */}
               <div className="mt-3">
                 <div className="section-label mb-1.5">
                   Registered plugins · {settings.registered_plugins.length}
@@ -338,7 +335,6 @@ function ServerTab() {
       <Panel className="xl:col-span-2">
         <PanelHeader
           title="Rule promotion"
-          hint="The learning loop behind `caspar promote --stats`"
         />
         <div className="px-5 py-4">
           {promote && promote.length ? (
@@ -401,7 +397,7 @@ function RisksTab() {
           <Field
             label="File path"
             htmlFor="supp-file"
-            hint="Unlike the CLI, the API has no default — accepted risks are only listed once a file is named."
+            hint="Name a file to list accepted risks"
           >
             <TextInput
               id="supp-file"
@@ -440,7 +436,7 @@ function RisksTab() {
                   <Field
                     label="Reason"
                     htmlFor="supp-reason"
-                    hint="Required. An accepted risk with no recorded reason is indistinguishable from one nobody noticed."
+                    hint="Required"
                   >
                     <TextInput
                       id="supp-reason"
@@ -484,7 +480,6 @@ function RisksTab() {
       <Panel className="xl:col-span-7">
         <PanelHeader
           title="Accepted risks"
-          hint="Excluded from scoring and threshold checks"
         />
         <div className="p-4">
           {!applied ? (
@@ -573,8 +568,7 @@ function RemediateTab() {
               two deliberate CLI asymmetries, and an operator expecting the fix
               to land needs to know before they rely on it. */}
           <p className="rounded-lg border border-border bg-panel-alt/60 px-3 py-2 text-xs text-muted-foreground">
-            Preview only. The API never writes to files it did not create, so applying a patch
-            stays a CLI operation: <code className="font-mono">caspar fix --in-place</code>.
+            Preview only — apply with <code className="font-mono">caspar fix --in-place</code>.
           </p>
 
           <FormError error={preview.error} />

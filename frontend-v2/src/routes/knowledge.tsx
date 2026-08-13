@@ -444,7 +444,6 @@ function ChainsPanel({ target }: { target: string }) {
     <Panel>
       <PanelHeader
         title="Chain definitions"
-        hint="Defined for this target — not necessarily present on any host"
       />
       <div className="p-4">
         {isLoading ? (
@@ -521,7 +520,6 @@ function BenchmarksPanel() {
     <Panel>
       <PanelHeader
         title="Benchmarks"
-        hint="Where the rules came from — one row per registered target"
       />
       <div className="p-4">
         {isLoading ? (

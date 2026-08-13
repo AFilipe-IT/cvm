@@ -86,9 +86,12 @@ function DimensionDetail() {
             </div>
             <div className="num mt-3 text-5xl font-semibold text-faint">N/A</div>
             <p className="mt-3 text-sm text-muted-foreground">{d.description}</p>
+            {/* The one thing the badge and the N/A cannot say on their own:
+                that this axis is EXCLUDED rather than counted as zero. Kept
+                to a single clause — reading it as a clean result is the
+                failure the whole dimension model exists to prevent. */}
             <p className="mt-3 text-xs text-muted-foreground">
-              This dimension carries no score, no findings and no delta. The overall posture
-              excludes it — a missing measurement is not a clean result.
+              Excluded from the overall — not counted as zero.
             </p>
             <button className="mt-5 inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-foreground hover:bg-accent-hover">
               <PlayCircle className="size-4" /> Enable collector
@@ -97,7 +100,6 @@ function DimensionDetail() {
           <Panel className="lg:col-span-2">
             <PanelHeader
               title="What this dimension would measure"
-              hint="Rules ship with the knowledge base and are ready to run"
             />
             <ul className="divide-y divide-border">
               {d.would_measure.map((w) => (
@@ -233,7 +235,6 @@ function DimensionDetail() {
           <Panel className="xl:col-span-12">
             <PanelHeader
               title="Listening sockets"
-              hint="Bound address and owning process, as observed"
             />
             <div className="scroll-x">
               <table className="w-full min-w-[720px] text-left text-sm">

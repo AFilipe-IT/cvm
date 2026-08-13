@@ -132,7 +132,7 @@ function RunPanel({
   return (
     <div className="grid gap-4 xl:grid-cols-12">
       <Panel className="xl:col-span-5">
-        <PanelHeader title="New assessment" hint="Scans complete in seconds" />
+        <PanelHeader title="New assessment" />
         <div className="space-y-4 p-4">
           <Field label="Source" htmlFor="scan-mode">
             <Select
@@ -150,7 +150,7 @@ function RunPanel({
             <Field
               label="Config path"
               htmlFor="scan-path"
-              hint="A path on the server, exactly as passed to `caspar scan`."
+              
             >
               <TextInput
                 id="scan-path"
@@ -165,7 +165,7 @@ function RunPanel({
             <Field
               label="Config file"
               htmlFor="scan-file"
-              hint="Staged server-side, then assessed by the same code path as a local scan."
+              
             >
               <input
                 id="scan-file"
@@ -180,7 +180,7 @@ function RunPanel({
             <Field
               label="Target"
               htmlFor="scan-live"
-              hint="Reads the installed service's own configuration and version."
+              
             >
               <Select
                 id="scan-live"
@@ -224,7 +224,7 @@ function RunPanel({
           <Field
             label="Threshold (optional)"
             htmlFor="scan-threshold"
-            hint="`caspar scan --threshold` decides an exit code; over HTTP the scan still succeeds, so the verdict comes back as data."
+            
           >
             <TextInput
               id="scan-threshold"
@@ -258,7 +258,7 @@ function RunPanel({
       </Panel>
 
       <Panel className="xl:col-span-7">
-        <PanelHeader title="Result" hint="The assessment just run" />
+        <PanelHeader title="Result" />
         <div className="p-4">
           {result ? (
             <ScanResultView result={result} />
@@ -366,7 +366,6 @@ function HistoryPanel() {
     <Panel>
       <PanelHeader
         title="Assessment history"
-        hint="Every stored assessment, newest first"
       />
       <div className="p-4">
         {isLoading ? (
@@ -475,7 +474,7 @@ function ComparePanel() {
   return (
     <div className="grid gap-4 xl:grid-cols-12">
       <Panel className="xl:col-span-4">
-        <PanelHeader title="Compare assessments" hint="Older against newer" />
+        <PanelHeader title="Compare assessments" />
         <div className="space-y-4 p-4">
           {/* Order is load-bearing: run backwards, the diff reports fixes as
               regressions. The labels say which is which rather than leaving it

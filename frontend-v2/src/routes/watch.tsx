@@ -73,7 +73,7 @@ function WatchPage() {
             <Panel>
               <EmptyState
                 title="No watch sessions"
-                hint="Start one with `caspar watch <target>`. A session keeps re-assessing its target and records every change here."
+                hint="Start one with `caspar watch <target>`"
                 icon={<Activity className="size-5" />}
               />
             </Panel>
@@ -116,7 +116,7 @@ function WatchPage() {
         </div>
 
         <Panel className="xl:col-span-5">
-          <PanelHeader title="Event stream" hint="Configuration changes and their score impact" />
+          <PanelHeader title="Event stream" />
           {eventsQuery.isLoading ? (
             <LoadingState label="Loading events…" />
           ) : eventsQuery.error ? (
@@ -124,7 +124,6 @@ function WatchPage() {
           ) : events.length === 0 ? (
             <EmptyState
               title="No events recorded"
-              hint="Each re-assessment a watch session performs is recorded here with its effect on the score."
               icon={<RefreshCcw className="size-5" />}
             />
           ) : null}

@@ -97,7 +97,6 @@ function PluginsPage() {
           <Panel>
             <PanelHeader
               title="Installed plugins"
-              hint="Assessable on this server right now"
             />
             <div className="p-4">
               {isLoading ? (
@@ -152,7 +151,6 @@ function PluginsPage() {
           <Panel>
             <PanelHeader
               title="Available from catalog"
-              hint="Public benchmarks CVM can fetch and install"
             />
             <div className="p-4">
               {isLoading ? (
@@ -208,7 +206,6 @@ function PluginsPage() {
           <Panel>
             <PanelHeader
               title="Install from a benchmark file"
-              hint="A CIS Benchmark PDF or DISA STIG XCCDF already on the server"
             />
             <div className="max-w-2xl space-y-4 p-4">
               <Field label="Benchmark path" htmlFor="plugin-source">
@@ -223,7 +220,7 @@ function PluginsPage() {
               <Field
                 label="Service manual (optional)"
                 htmlFor="plugin-manual"
-                hint="A local path or URL, ingested into the plugin's knowledge base at install time and retrieved on every future scan."
+                
               >
                 <TextInput
                   id="plugin-manual"

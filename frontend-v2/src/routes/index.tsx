@@ -302,7 +302,6 @@ function Overview() {
             <Panel>
               <EmptyState
                 title="No active attack chains"
-                hint="Chains appear when findings combine into a viable path."
                 icon={<Waypoints className="size-5" />}
               />
             </Panel>

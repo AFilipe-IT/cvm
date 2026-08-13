@@ -127,7 +127,7 @@ function ReportsPage() {
           ) : scans.length === 0 ? (
             <EmptyState
               title="Nothing to export"
-              hint="A report renders a stored assessment. Run one with `caspar scan` and it will appear here."
+              hint="Run an assessment to see reports here"
               icon={<FileText className="size-5" />}
             />
           ) : (

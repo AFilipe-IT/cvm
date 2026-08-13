@@ -62,14 +62,6 @@ function ChainsPage() {
         <KpiCard label="Exceed overall" value={exceeds} accent={KPI_ACCENTS.orange} icon={TrendingUp} footnote="worse than the aggregate" />
       </div>
 
-      <Panel className="mt-4 px-5 py-4">
-        <p className="max-w-4xl text-sm text-muted-foreground">
-          A chain scores higher than any of its steps because each weakness removes work the
-          attacker would otherwise have to do — reconnaissance, credential guessing, or finding a
-          path to persistence. Amplification is the multiplier applied to the worst step.
-        </p>
-      </Panel>
-
       <div className="mt-4 space-y-4">
         {chainsQuery.isLoading ? (
           <Panel>
@@ -83,7 +75,6 @@ function ChainsPage() {
           <Panel>
             <EmptyState
               title="No active attack chains"
-              hint="A chain becomes active when every one of its steps is present in the same assessment."
               icon={<Waypoints className="size-5" />}
             />
           </Panel>

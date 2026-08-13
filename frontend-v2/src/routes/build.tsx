@@ -72,7 +72,6 @@ function BuildPage() {
         <Panel className="xl:col-span-5">
           <PanelHeader
             title="New build"
-            hint="Runs server-side; a full LLM build can take over an hour"
           />
           <div className="space-y-4 p-4">
             <Field
@@ -142,7 +141,7 @@ function BuildPage() {
         </Panel>
 
         <Panel className="xl:col-span-7">
-          <PanelHeader title="Build output" hint="Streams while the job runs" />
+          <PanelHeader title="Build output" />
           <div className="p-4">
             <JobConsole
               jobId={activeJobId}
@@ -155,7 +154,6 @@ function BuildPage() {
         <Panel className="xl:col-span-12">
           <PanelHeader
             title="Build history"
-            hint="Select a past build to re-read its log"
           />
           <div className="p-4">
             {isLoading ? (

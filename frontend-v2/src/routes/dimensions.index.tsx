@@ -135,9 +135,9 @@ function DimensionsPage() {
               <div className="mt-4 flex items-end gap-3">
                 <span className="num text-4xl font-semibold leading-none text-faint">N/A</span>
               </div>
+              {/* Same single clause as the detail page: excluded, not zero. */}
               <p className="mt-3 text-[11px] text-muted-foreground">
-                No score exists for this dimension. It is excluded from the overall posture rather
-                than counted as zero.
+                Excluded from the overall — not counted as zero.
               </p>
               <div className="mt-4 flex items-center justify-end border-t border-border pt-3">
                 <Link

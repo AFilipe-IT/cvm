@@ -196,8 +196,7 @@ export function FindingDetail({
           <EvidenceBlock evidence={finding.evidence} />
         ) : (
           <p className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
-            No observation is recorded for this finding — it was not tied to a scanned file or
-            socket.
+            No observation recorded.
           </p>
         )}
       </div>
@@ -221,7 +220,7 @@ export function FindingDetail({
             </div>
           ) : (
             <p className="mt-1.5 text-xs text-muted-foreground">
-              No CVE mapped — this is a configuration weakness, not a software defect.
+              No CVE — configuration weakness, not a software defect.
             </p>
           )}
         </div>

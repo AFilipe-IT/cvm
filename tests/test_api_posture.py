@@ -54,6 +54,7 @@ def db_path():
         target_name="dummy", directive="DangerousOption", bad_value="on",
         good_value="off", av="N", au="N", ac="L", c="P", i="P", a="P",
         base_score=bs, temporal_score=ts, gel="M", grl="H",
+        cves=["CVE-2023-00001"],
         justification="DangerousOption=on exposes the system.",
         recommendation="Set DangerousOption=off in the config.",
     ))
@@ -114,6 +115,31 @@ class TestPostureShape:
 
     def test_an_unknown_host_is_a_404(self, client):
         assert client.get("/api/v1/posture?host_id=999").status_code == 404
+
+    def test_the_manifest_records_what_produced_the_score(self, client,
+                                                          dummy_config_file):
+        _scan(client, dummy_config_file)
+        m = client.get("/api/v1/posture").json()["manifest"]
+        assert m["db_sha256"], "the knowledge base the scores came from"
+        assert m["python"]
+        assert m["scoring_model_version"] == "2.0"
+
+    def test_disagreeing_manifests_report_null_rather_than_picking_one(self, client):
+        """A posture spans several scans. When they came from different
+        knowledge bases the aggregate is not reproducible from one state, and
+        saying so beats reporting whichever hash happened to sort first."""
+        from config_assessment.api.routers.posture import _manifest
+
+        class R:
+            def __init__(self, m): self.manifest = m
+
+        agreeing = _manifest([R({"db_sha256": "aaa"}), R({"db_sha256": "aaa"})])
+        assert agreeing["db_sha256"] == "aaa"
+
+        differing = _manifest([R({"db_sha256": "aaa"}), R({"db_sha256": "bbb"})])
+        assert differing["db_sha256"] is None
+        # The scoring model is this build's, so it is known even then.
+        assert differing["scoring_model_version"] == "2.0"
 
 
 # ── the distinction, over HTTP ─────────────────────────────────────────
@@ -187,6 +213,11 @@ class TestPostureNumbers:
         assert driver["dimension"] == "configuration"
         assert "DangerousOption" in driver["label"]
         assert driver["score"] > 0
+        # The id is what lets the console link straight to it.
+        assert driver["finding_id"]
+        listed = client.get("/api/v1/findings").json()["findings"]
+        assert driver["finding_id"] in {f["id"] for f in listed}, \
+            "the driver must point at a finding the client can actually fetch"
 
     def test_no_findings_means_no_driver(self, client):
         assert client.get("/api/v1/posture").json()["overall"]["driver"] is None
@@ -205,6 +236,21 @@ class TestPostureNumbers:
         totals = client.get("/api/v1/posture").json()["totals"]
         assert totals["targets_assessed"] == 1
         assert totals["findings_open"] >= 1
+        # Distinct CVEs, not a sum over findings: one CVE cited by three
+        # findings is one CVE, and counting it three times would overstate
+        # the exposure.
+        assert totals["related_cves"] == 1
+
+    def test_rules_evaluated_counts_what_was_examined_not_what_exists(
+            self, client, dummy_config_file):
+        """Counting knowledge-base rules instead of examined directives would
+        inflate apparent coverage — the same error not_assessed prevents."""
+        _scan(client, dummy_config_file)
+        totals = client.get("/api/v1/posture").json()["totals"]
+        assert totals["rules_evaluated"] >= totals["findings_open"]
+        scanned = client.get("/api/v1/scans").json()
+        rows = scanned["scans"] if isinstance(scanned, dict) else scanned
+        assert totals["rules_evaluated"] == rows[0]["total_directives"]
 
     def test_repeated_scans_of_one_file_count_once(self, client, dummy_config_file):
         """A file scanned nightly must not outweigh one scanned once."""

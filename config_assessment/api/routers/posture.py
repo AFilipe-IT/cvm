@@ -136,10 +136,17 @@ def get_posture(host_id: int | None = None, db: Database = Depends(get_db)) -> d
         },
         "totals": {
             "targets_assessed": len({r.target_name for r in results}),
+            # Directives actually examined, not rules held in the knowledge
+            # base: a rule for a directive absent from the config was never
+            # evaluated, and counting it would inflate the appearance of
+            # coverage — the same error `not_assessed` exists to prevent.
+            "rules_evaluated": sum(r.total_directives_scanned for r in results),
             "findings_open": len(findings),
             "critical_findings": sum(1 for f in findings
                                      if f.temporal_score >= 9.0),
+            "related_cves": len({cve for f in findings for cve in (f.cves or [])}),
         },
+        "manifest": _manifest(results),
         "scoring_model": {
             "version": SCORING_MODEL_VERSION,
             "aggregation": "weighted",
@@ -147,6 +154,30 @@ def get_posture(host_id: int | None = None, db: Database = Depends(get_db)) -> d
             "weights_source": "declared",
         },
         "assessed_at": assessed_at,
+    }
+
+
+def _manifest(results: list) -> dict:
+    """Provenance for the aggregate (contract §1).
+
+    Every scan already carries its own manifest, but a posture spans several,
+    so this reports what they AGREE on. `db_sha256` is the knowledge base the
+    scores came from; when the aggregated scans disagree — one predates a
+    knowledge-base rebuild — it comes back `null` rather than picking one, and
+    the reader learns the aggregate is not reproducible from a single state.
+    That is the honest answer, and it is the whole point of the manifest.
+    """
+    manifests = [r.manifest for r in results if getattr(r, "manifest", None)]
+
+    def agreed(key: str):
+        values = {m.get(key) for m in manifests if m.get(key)}
+        return values.pop() if len(values) == 1 else None
+
+    return {
+        "cvm_version": agreed("caspar_version"),
+        "python": agreed("python"),
+        "db_sha256": agreed("db_sha256"),
+        "scoring_model_version": SCORING_MODEL_VERSION,
     }
 
 
@@ -190,5 +221,8 @@ def _driver(findings: list) -> dict | None:
         "kind": "finding",
         "dimension": dimension_of(worst),
         "label": f"{worst.directive} = {worst.bad_value}",
+        # The id is what makes the driver actionable: the console links
+        # straight to the finding rather than making the user search for it.
+        "finding_id": worst.id,
         "score": worst.temporal_score,
     }

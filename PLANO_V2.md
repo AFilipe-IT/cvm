@@ -254,6 +254,52 @@ configurações deliberadamente vulneráveis; concordância entre as 18 regras
 curadas e as suas equivalentes extraídas; análise de sensibilidade dos pesos
 (±10%, estabilidade de ordenação).
 
+#### Resultados medidos (2026-08-13)
+
+| Medida | Resultado | Como reproduzir |
+|---|---|---|
+| Recall sobre fixtures vulneráveis | **100,0%** (96/96) | `scripts/evaluate.py` §3 |
+| Precisão / F1 sobre fixtures endurecidas | **100,0%** (96 TP, 0 FP) | `scripts/evaluate.py` §4 |
+| Concordância com os CCE (DISA) | 20 pontuados, 20 concordantes, 0 discordantes, 85 desconhecidos — **taxa de discordância 0,0%** | `scripts/evaluate.py` §2 (requer `openpyxl`) |
+| Concordância regras curadas ↔ SSG | **100,0%** sobre 9 regras cruzáveis; cobertura cruzável 81,8% | `scripts/agreement.py --archive scap-security-guide-0.1.81.tar.bz2` |
+| Sensibilidade dos pesos (±10%) | **tau-b = 1,000** em 14 perturbações, 0 mudanças de banda, movimento máximo 0,200 | `scripts/sensitivity_fleet.py` + `scripts/sensitivity.py` |
+
+**Três ressalvas que devem constar na dissertação, não apenas no repositório.**
+
+*A concordância junta pelo objecto observado, não pelo número da secção.* As
+regras curadas citam secções CIS de uma revisão diferente da que o SSG publica
+em `controls/cis_ubuntu2204.yml`: a curada «6.1.2» é o modo do `/etc/shadow`,
+a do SSG é outro controlo. Juntar pelo número produziria discordância em toda a
+linha e mediria a renumeração, não as regras. A chave é o par `(tipo, caminho)`.
+Das 11 regras curadas cruzáveis, 2 não têm equivalente no SSG (`/boot/grub/grub.cfg`
+e `/etc/ssh/sshd_config`) — é cobertura em falta, não erro, e por isso a taxa de
+concordância e a de cobertura são reportadas com denominadores separados. A
+metade do grupo em `file_owner:/etc/shadow` fica por verificar: o SSG guarda-a
+numa macro Jinja que este pipeline deliberadamente não expande.
+
+*A sensibilidade exige anfitriões multidimensionais e a base de referência não
+os tem.* Com uma só dimensão avaliada, a renormalização leva o seu peso a 1,0 e
+o score global iguala-a identicamente: qualquer perturbação é um no-op e o
+tau-b vale 1,0 por aritmética, não por robustez. Os 29 anfitriões da base de
+referência estão todos nessa situação, pelo que `scripts/sensitivity.py` recusa
+emitir veredicto e diz porquê. O resultado acima foi obtido sobre a frota
+sintética de `scripts/sensitivity_fleet.py` (7 anfitriões `ubuntu2204`, três
+dimensões avaliadas).
+
+*A frota é sintética.* Sustenta a afirmação de que **a agregação** é insensível
+aos pesos declarados num conjunto de perfis dimensionais variados. Não é uma
+amostra de sistemas reais e não sustenta nenhuma afirmação sobre a distribuição
+de scores no mundo real.
+
+#### Lacuna encontrada na Fase C, ainda por fechar
+
+O alvo `ubuntu2204` **não é alcançável pela CLI**. `caspar scan /` falha com
+«Nenhum ficheiro de configuração reconhecido»: `core/input_resolver.py::resolve_directory`
+assume que qualquer directório é um directório de configuração e procura
+`nginx.conf`, `httpd.conf`, … sem nunca perguntar aos plugins se algum reclama
+a raiz. O motor está correcto — `runtime.scan(root, db)` funciona, e é assim que
+os testes e a frota sintética o invocam — a lacuna é só no resolvedor da CLI.
+
 ## 6. A UI do Lovable — estado verificado
 
 Repositório: `AFilipe-IT/cvm-security-posture`. Clonado e inspeccionado em

@@ -58,6 +58,27 @@ acumulado.
 utilizador, com o SSH só em loopback. `/etc/cvm-target` marca-a como tal, para
 que nenhum resultado desta máquina seja confundido com um sistema real.
 
+## Linha de base medida (2026-08-13, motor v1)
+
+Correr o CASPAR contra o `nginx.conf` desta VM dá:
+
+```
+score 7.5 (HIGH) · achado máximo server_tokens 7.5
+cadeia server-info-to-tls-downgrade 8.9 (server_tokens + ssl_protocols)
+cobertura: 4 de 110 directivas correspondidas · 18 regras nginx
+```
+
+Isto é a linha de base contra a qual a Fase C se mede, e mostra a lacuna que a
+v2 existe para fechar: **as falhas de permissões e exposição desta VM não
+aparecem em lado nenhum deste resultado.** O `/etc/shadow` a 0644 e o socket em
+`0.0.0.0:8080` estão lá, verificados acima, e o score de 7.5 ignora ambos —
+porque o motor v1 só lê ficheiros de configuração. As duas dimensões novas têm
+aqui um alvo onde falham de verdade.
+
+Nota sobre a cobertura: 4/110 é o esperado num `nginx.conf` de distribuição,
+onde a maioria das directivas é estrutural (`events`, `http`, `include`) e não
+tem regra CIS associada.
+
 ## Reprodutibilidade
 
 A imagem base é verificada contra o `SHA256SUMS` publicado pela Canonical e o

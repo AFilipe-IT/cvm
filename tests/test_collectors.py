@@ -280,3 +280,106 @@ class TestExposureCollector:
         """Present and readable, with no listeners: genuinely nothing exposed."""
         proc = _proc_with(tmp_path, [])
         assert exposure.collect(proc_root=proc, resolve_process=False) == []
+
+
+class TestServiceClassification:
+    """The port-independent directive: the collector answers the QUESTION
+    ("is redis exposed?") so a single rule covers the service wherever it
+    listens. This is what closes the gap the port-named rules leave open."""
+
+    @staticmethod
+    def _with_process(tmp_path, hex_addr, comm, inode="4242"):
+        net = tmp_path / "net"
+        net.mkdir(exist_ok=True)
+        (tmp_path / "net/tcp").write_text("header\n" + _row(hex_addr, inode=inode))
+        (tmp_path / "net/tcp6").write_text("header\n")
+        pid = tmp_path / "812"
+        (pid / "fd").mkdir(parents=True)
+        (pid / "comm").write_text(f"{comm}\n")
+        os.symlink(f"socket:[{inode}]", pid / "fd/3")
+        return str(tmp_path)
+
+    def test_a_conventional_port_identifies_the_service(self, tmp_path):
+        # 18EB = 6379
+        proc = _proc_with(tmp_path, [_row("00000000:18EB")])
+        found = {d.name: d for d in exposure.collect(proc_root=proc,
+                                                     resolve_process=False)}
+        assert found["exposed_service:redis"].value == "world_facing"
+        assert found["exposed_service:redis"].evidence["identified_by"] == "port"
+
+    def test_a_non_standard_port_is_caught_via_the_process(self, tmp_path):
+        """The gap the port-named rules leave open: 'security by non-standard
+        port' is exactly the assumption an audit must not share."""
+        # 1E61 = 7777, no conventional service
+        proc = self._with_process(tmp_path, "00000000:1E61", "redis-server")
+        found = {d.name: d for d in exposure.collect(proc_root=proc)}
+        assert found["exposed_service:redis"].value == "world_facing"
+        assert found["exposed_service:redis"].evidence["identified_by"] == "process"
+
+    def test_the_process_name_beats_the_port_convention(self, tmp_path):
+        """Something else on 6379 is not redis, whatever the port suggests."""
+        proc = self._with_process(tmp_path, "00000000:18EB", "mongod")
+        found = {d.name for d in exposure.collect(proc_root=proc)}
+        assert "exposed_service:mongodb" in found
+        assert "exposed_service:redis" not in found
+
+    def test_a_loopback_service_is_classified_not_omitted(self, tmp_path):
+        """`loopback` is a real answer to the exposure question, and matches no
+        rule — the finding is the exposure, not the presence of the service."""
+        proc = _proc_with(tmp_path, [_row("0100007F:18EB")])
+        found = {d.name: d.value for d in exposure.collect(proc_root=proc,
+                                                           resolve_process=False)}
+        assert found["exposed_service:redis"] == "loopback"
+
+    def test_an_unidentifiable_service_is_not_guessed(self, tmp_path):
+        """A non-standard port with an unresolvable process yields NO service
+        directive. A wrong attribution would put a confident, citable finding
+        against a service that is not there — worse than an acknowledged gap."""
+        proc = _proc_with(tmp_path, [_row("00000000:1E61")])
+        found = {d.name for d in exposure.collect(proc_root=proc,
+                                                  resolve_process=False)}
+        assert not any(n.startswith("exposed_service:") for n in found)
+        assert "listen:tcp/0.0.0.0:7777" in found, "the socket is still observed"
+
+    def test_a_generic_process_name_falls_back_to_the_port(self, tmp_path):
+        """`java` identifies nothing; the port is the weaker but honest signal."""
+        proc = self._with_process(tmp_path, "00000000:23F0", "java")  # 9200
+        found = {d.name: d for d in exposure.collect(proc_root=proc)}
+        assert found["exposed_service:elasticsearch"].evidence[
+            "identified_by"] == "port"
+
+    def test_a_dual_stack_service_is_reported_once(self, tmp_path):
+        """Two sockets, one service: the console must not show the finding
+        twice."""
+        net = tmp_path / "net"
+        net.mkdir()
+        (tmp_path / "net/tcp").write_text("header\n" + _row("00000000:18EB"))
+        (tmp_path / "net/tcp6").write_text(
+            "header\n" + _row("00000000000000000000000000000000:18EB", inode="2"))
+        found = [d for d in exposure.collect(proc_root=str(tmp_path),
+                                             resolve_process=False)
+                 if d.name == "exposed_service:redis"]
+        assert len(found) == 1
+        assert found[0].value == "world_facing"
+
+    def test_a_world_facing_binding_decides_a_mixed_service(self, tmp_path):
+        """Listening on loopback as well does not make a reachable service
+        unreachable — the reverse would let an extra socket mask the finding."""
+        net = tmp_path / "net"
+        net.mkdir()
+        (tmp_path / "net/tcp").write_text("header\n" + _row("0100007F:18EB"))
+        (tmp_path / "net/tcp6").write_text(
+            "header\n" + _row("00000000000000000000000000000000:18EB", inode="2"))
+        found = [d for d in exposure.collect(proc_root=str(tmp_path),
+                                             resolve_process=False)
+                 if d.name == "exposed_service:redis"]
+        assert len(found) == 1
+        assert found[0].value == "world_facing"
+
+    def test_the_socket_directives_survive_alongside(self, tmp_path):
+        """Both are emitted: they answer different questions."""
+        proc = _proc_with(tmp_path, [_row("00000000:18EB")])
+        names = {d.name for d in exposure.collect(proc_root=proc,
+                                                  resolve_process=False)}
+        assert "listen:tcp/0.0.0.0:6379" in names
+        assert "exposed_service:redis" in names

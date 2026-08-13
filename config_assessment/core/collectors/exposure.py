@@ -49,6 +49,59 @@ _PROC_SOURCES = (
     ("tcp6", "net/tcp6"),
 )
 
+# Service identity by process name. Preferred over the port when available,
+# because it survives the case the port-based rules cannot see: a datastore
+# moved off its default port is still that datastore, and "security by
+# non-standard port" is precisely the assumption an audit should not share.
+#
+# Keys are matched against /proc/<pid>/comm, which is the executable name
+# truncated to 15 characters — hence `mysqld` and not `mysqld-server`.
+_PROCESS_SERVICE: dict[str, str] = {
+    "redis-server": "redis",
+    "redis-sentinel": "redis",
+    "mysqld": "mysql",
+    "mariadbd": "mysql",
+    "postgres": "postgresql",
+    "mongod": "mongodb",
+    "memcached": "memcached",
+    "elasticsearch": "elasticsearch",
+    "java": "",          # too generic to identify anything; fall back to port
+    "dockerd": "docker",
+}
+
+# Service identity by conventional port, used when the process is unknown —
+# the common case, since resolving it needs privilege the scan does not assume.
+# A port is weaker evidence than a process name: it is a convention, not a
+# fact about what is running. It is recorded as such in the evidence.
+_PORT_SERVICE: dict[int, str] = {
+    3306: "mysql",
+    5432: "postgresql",
+    6379: "redis",
+    27017: "mongodb",
+    9200: "elasticsearch",
+    11211: "memcached",
+    2375: "docker",
+    2376: "docker",
+}
+
+
+def _service_of(process: str | None, port: int) -> tuple[str | None, str | None]:
+    """Identify the service behind a socket, and say how confidently.
+
+    Returns (service, basis) where basis is "process" or "port" — the console
+    and the report need to distinguish an observed identity from an inferred
+    one, and an operator dismissing a finding deserves to know which they are
+    looking at.
+    """
+    if process:
+        named = _PROCESS_SERVICE.get(process)
+        if named:
+            return named, "process"
+    by_port = _PORT_SERVICE.get(port)
+    if by_port:
+        return by_port, "port"
+    return None, None
+
 
 def _parse_addr(hex_addr: str) -> tuple[str, int] | None:
     """'0100007F:1F90' → ('127.0.0.1', 8080).
@@ -154,6 +207,7 @@ def collect(proc_root: str | Path = "/proc",
     inode_pid = _inode_to_pid(proc) if resolve_process else {}
     directives: list[Directive] = []
     seen: set[str] = set()
+    services: dict[str, dict] = {}
 
     for proto, path in available:
         try:
@@ -192,5 +246,60 @@ def collect(proc_root: str | Path = "/proc",
                     "world_facing": _is_world_facing(address),
                 },
             ))
+
+            # Second, PORT-INDEPENDENT directive for the same socket.
+            #
+            # The directive above encodes the port in its NAME, so it needs one
+            # rule per port and misses a datastore moved off its default — the
+            # documented gap this closes. Here the name is the QUESTION ("is
+            # redis exposed?") and the value is the ANSWER, so a single rule
+            # covers the service wherever it listens.
+            #
+            # Both are emitted because they answer different questions and the
+            # engine de-duplicates by rule, not by socket: the port-named rules
+            # carry per-port benchmark citations, this one carries the general
+            # control. Two rules firing on one socket is two true statements.
+            world_facing = _is_world_facing(address)
+            service, basis = _service_of(process, port)
+            if service:
+                # Accumulated rather than emitted here: one service can hold
+                # several sockets (dual-stack, or loopback plus wildcard), and
+                # the exposure QUESTION has one answer per service. Deciding it
+                # per socket would emit two contradictory findings for the same
+                # service — "redis is exposed" and "redis is loopback" — and the
+                # console would show both.
+                prior = services.get(service)
+                if prior is None or (world_facing and not prior["world_facing"]):
+                    services[service] = {
+                        "world_facing": world_facing,
+                        "location": f"{proto}/{address}:{port}",
+                        "process": process,
+                        "pid": inode_pid.get(inode),
+                        "identified_by": basis,
+                    }
+
+    # One verdict per service, and a world-facing binding decides it: a service
+    # reachable from the network is exposed whether or not it also listens on
+    # loopback. The reverse would let an extra loopback socket mask the finding.
+    for service, seen_on in services.items():
+        directives.append(Directive(
+            name=f"exposed_service:{service}",
+            # The VALUE is the classification, which is what makes the rule
+            # port-independent: an exact-match join still works because the
+            # collector, not the rule, does the deciding.
+            value="world_facing" if seen_on["world_facing"] else "loopback",
+            evidence={
+                "kind": "listening_socket",
+                "location": seen_on["location"],
+                "process": seen_on["process"],
+                "pid": seen_on["pid"],
+                "world_facing": seen_on["world_facing"],
+                "service": service,
+                # Whether the identity was OBSERVED (process name) or INFERRED
+                # (conventional port). An operator dismissing a finding
+                # deserves to know which.
+                "identified_by": seen_on["identified_by"],
+            },
+        ))
 
     return directives

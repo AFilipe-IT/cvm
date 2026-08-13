@@ -152,14 +152,9 @@ _BOOT = [
 # on 0.0.0.0:80 is the intended configuration, and flagging it would be the
 # kind of false positive that trains an operator to ignore the tool.
 #
-# KNOWN LIMITATION — coverage is by PORT, not by the `world_facing` flag the
-# collector computes. A datastore on a non-standard port is observed (it
-# appears among the scanned directives, with `world_facing` set) but matches no
-# rule, so it is not scored. Closing that needs either a predicate rule type —
-# the engine matches exact values, by design, because that is what makes a
-# score reproducible from the stated rule — or process-name resolution, which
-# requires privilege the scan does not assume. The gap is real and is stated
-# here rather than hidden behind an enumeration that looks exhaustive.
+# These port-named rules cite a specific binding, which is what an auditor
+# wants to read. They are COMPLEMENTED by the port-independent rules below,
+# which catch the same service on a non-standard port; see `_EXPOSED_SERVICE`.
 def _exposure_entries() -> list[tuple]:
     services = [
         ("3306", "MySQL/MariaDB", "CIS Ubuntu 3.1.1", "C", "C", "P",
@@ -202,7 +197,78 @@ def _exposure_entries() -> list[tuple]:
 
 _EXPOSURE = _exposure_entries()
 
-ENTRIES = _SHADOW + _PASSWD + _SSHD + _CRON + _BOOT + _EXPOSURE
+# ── exposure, independent of the port ───────────────────────────────────────
+# The rules above name a port, so they miss a datastore moved off its default —
+# and "security by non-standard port" is exactly the assumption an audit must
+# not share. Here the collector does the classifying: the directive NAME is the
+# question ("is redis exposed?") and the VALUE is the answer ("world_facing"),
+# so one rule covers the service wherever it listens. Exact-value matching is
+# preserved, and with it reproducibility: the rule states a condition, and the
+# score follows from it the same way every time.
+#
+# Both sets fire on a default-port service. That is two true statements about
+# one socket, each carrying its own citation, and the engine de-duplicates by
+# rule rather than by socket — the scan's worst-case score is unchanged either
+# way, since the score is the worst individual finding.
+#
+# REMAINING LIMIT, stated precisely: identification needs either a known
+# process name or a conventional port. A service that is on a non-standard
+# port AND whose process cannot be resolved is observed as a listening socket
+# but not classified, so no service rule fires. Resolving the process means
+# reading /proc/<pid>/fd, which needs privilege for other users' processes —
+# an unprivileged scan will often see `unknown`. The collector reports that
+# rather than guessing, because a wrong service attribution is worse than an
+# acknowledged blind spot: it would put a confident, citable finding against
+# a service that is not there.
+_EXPOSED_SERVICE = [
+    ("exposed_service:redis", "world_facing", "loopback", "CIS Ubuntu 3.1.1",
+     "L", "C", "C", "C",
+     "Redis is listening on a network-reachable address. Redis has no "
+     "authentication by default, and a reachable instance is routinely turned "
+     "into remote code execution by writing an SSH key or a cron entry through "
+     "its own commands. The port it listens on does not change this: binding, "
+     "not port number, is what makes it reachable.",
+     "Bind Redis to 127.0.0.1 (or a private interface) and require a password."),
+    ("exposed_service:mysql", "world_facing", "loopback", "CIS Ubuntu 3.1.1",
+     "L", "C", "C", "P",
+     "The MySQL/MariaDB server is listening on a network-reachable address, so "
+     "every authentication attempt against it is remote and unthrottled.",
+     "Bind MySQL to 127.0.0.1, or restrict access with a host firewall rule."),
+    ("exposed_service:postgresql", "world_facing", "loopback", "CIS Ubuntu 3.1.1",
+     "L", "C", "C", "P",
+     "The PostgreSQL server is listening on a network-reachable address, "
+     "exposing the database to remote authentication attempts.",
+     "Set listen_addresses = 'localhost', or restrict access with pg_hba.conf "
+     "and a host firewall rule."),
+    ("exposed_service:mongodb", "world_facing", "loopback", "CIS Ubuntu 3.1.1",
+     "L", "C", "C", "P",
+     "MongoDB is listening on a network-reachable address. Historically the "
+     "default configuration required no authentication, and exposed instances "
+     "are found and emptied by automated scanners within hours.",
+     "Set bindIp to 127.0.0.1 and enable authorization."),
+    ("exposed_service:elasticsearch", "world_facing", "loopback", "CIS Ubuntu 3.1.1",
+     "L", "C", "C", "P",
+     "Elasticsearch is listening on a network-reachable address, typically "
+     "holding logs or indexed documents with no authentication in front.",
+     "Set network.host to 127.0.0.1, or put authentication and a firewall "
+     "in front of it."),
+    ("exposed_service:memcached", "world_facing", "loopback", "CIS Ubuntu 3.1.1",
+     "L", "C", "P", "C",
+     "Memcached is listening on a network-reachable address. It is both "
+     "readable by anyone who can reach it and usable as a high-amplification "
+     "DDoS reflector against third parties.",
+     "Bind Memcached to 127.0.0.1 and disable UDP."),
+    ("exposed_service:docker", "world_facing", "loopback", "CIS Ubuntu 3.1.1",
+     "L", "C", "C", "C",
+     "The Docker daemon API is listening on a network-reachable address. It is "
+     "unauthenticated by default and grants root on the host to anyone who can "
+     "reach it — mounting the host filesystem into a container is a single "
+     "API call.",
+     "Do not expose the Docker socket over TCP; use the local unix socket, or "
+     "require TLS client certificates."),
+]
+
+ENTRIES = _SHADOW + _PASSWD + _SSHD + _CRON + _BOOT + _EXPOSURE + _EXPOSED_SERVICE
 ABSENCE_RULES: list = []
 
 

@@ -24,6 +24,21 @@ from cli._output import _print_result, _to_sarif, warn_if_inside_container
 logger = logging.getLogger("ccss")
 
 
+def _record_host_attributes(db, host_id: int) -> None:
+    """Refresh what the tagged host currently looks like.
+
+    Collection runs where CVM runs, which in a single-instance deployment is
+    the system being assessed — no agent, no SSH. Best-effort by design: the
+    inventory is a description of the host, and failing to refresh it must
+    never cost the user the scan they actually asked for.
+    """
+    try:
+        from config_assessment.core.inventory import collect
+        db.update_host_attributes(host_id, **collect().as_dict())
+    except Exception as exc:  # noqa: BLE001 — never fatal, see docstring
+        logger.debug("Could not collect host attributes: %s", exc)
+
+
 @click.command("scan")
 @click.argument("input_path", metavar="CONFIG")
 @click.option("--live", "-l", is_flag=True, default=False,
@@ -162,6 +177,8 @@ def scan(ctx, input_path, live, report, fmt, output, threshold,
             # to persist history must never break the scan itself.
             try:
                 host_id = db.upsert_host(host_label) if host_label else None
+                if host_id is not None:
+                    _record_host_attributes(db, host_id)
                 db.save_scan_result(result, host_id=host_id)
             except Exception as exc:
                 logger.warning("Could not save scan history: %s", exc)
@@ -437,6 +454,8 @@ def watch(ctx, input_path, live, service_version, interval, env_profile,
     session_id = str(uuid4())
     with Database(db_path) as db:
         host_id = db.upsert_host(host_label) if host_label else None
+        if host_id is not None:
+            _record_host_attributes(db, host_id)
         db.touch_watch_heartbeat(session_id)   # live immediately, not after 1 interval
 
     def _scan():

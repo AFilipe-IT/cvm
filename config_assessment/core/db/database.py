@@ -170,6 +170,8 @@ class Database:
             except Exception:
                 pass  # Column already exists — safe to ignore
 
+        self._migrate_host_identity()
+
         # Table-recreation migration: add expected_value_prefix + widen UNIQUE constraint.
         # Cannot use ALTER TABLE ADD COLUMN because the UNIQUE constraint must change.
         existing_cols = {r[1] for r in self._conn.execute(
@@ -265,6 +267,66 @@ class Database:
         finally:
             self._conn.execute("PRAGMA foreign_keys=ON")
 
+    def _migrate_host_identity(self) -> None:
+        """Give every host a stable UUID (v2 inventory).
+
+        Until v2 a host was identified by its label, which is exactly the
+        attribute that changes when a machine is renamed — the history would
+        split in two without anything signalling it. The UUID is assigned once
+        and never changes; label, hostname and ip_address become attributes.
+
+        Rows that predate this migration get a UUID generated now. That is a
+        new identity, not a recovered one: there is no way to reconstruct what
+        a pre-v2 host's UUID "would have been". The scans already attached to
+        it keep pointing at the same row id, so no history is lost.
+        """
+        import logging
+        import uuid as _uuid
+        _log = logging.getLogger(__name__)
+
+        cols = {r[1] for r in
+                self._conn.execute("PRAGMA table_info(hosts)").fetchall()}
+        if not cols:
+            return  # No hosts table yet — schema.sql creates it with uuid.
+
+        # SQLite cannot ADD COLUMN with UNIQUE, so the column goes in plain and
+        # the uniqueness comes from an index created after backfilling.
+        new_cols = [
+            ("uuid", "ALTER TABLE hosts ADD COLUMN uuid TEXT"),
+            ("hostname", "ALTER TABLE hosts ADD COLUMN hostname TEXT"),
+            ("ip_address", "ALTER TABLE hosts ADD COLUMN ip_address TEXT"),
+            ("os_family", "ALTER TABLE hosts ADD COLUMN os_family TEXT"),
+            ("os_version", "ALTER TABLE hosts ADD COLUMN os_version TEXT"),
+            ("kernel", "ALTER TABLE hosts ADD COLUMN kernel TEXT"),
+            ("last_seen_at", "ALTER TABLE hosts ADD COLUMN last_seen_at TEXT"),
+        ]
+        added = False
+        for name, sql in new_cols:
+            if name in cols:
+                continue
+            self._conn.execute(sql)
+            added = True
+        if added:
+            self._conn.commit()
+            _log.info("Migration applied: hosts gained v2 identity columns")
+
+        missing = self._conn.execute(
+            "SELECT id FROM hosts WHERE uuid IS NULL OR uuid = ''"
+        ).fetchall()
+        for row in missing:
+            self._conn.execute(
+                "UPDATE hosts SET uuid = ? WHERE id = ?",
+                (str(_uuid.uuid4()), row["id"]),
+            )
+        if missing:
+            self._conn.commit()
+            _log.info("Migration: assigned a UUID to %d existing host(s)",
+                      len(missing))
+
+        self._conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_hosts_uuid ON hosts (uuid)")
+        self._conn.commit()
+
     def __exit__(self, *_: object) -> None:
         self.close()
 
@@ -326,19 +388,83 @@ class Database:
     # ------------------------------------------------------------------ #
 
     def upsert_host(self, label: str) -> int:
-        """Insert or fetch a host by label. Returns the host's row id."""
+        """Insert or fetch a host by label. Returns the host's row id.
+
+        A first registration mints a UUID; a repeat call only bumps
+        updated_at, so the identity assigned the first time survives every
+        later scan under the same label.
+        """
+        import uuid as _uuid
         cur = self._conn.execute(
             """
-            INSERT INTO hosts (label) VALUES (:label)
+            INSERT INTO hosts (label, uuid) VALUES (:label, :uuid)
             ON CONFLICT(label) DO UPDATE SET
                 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
             RETURNING id
             """,
-            {"label": label},
+            {"label": label, "uuid": str(_uuid.uuid4())},
         )
         row = cur.fetchone()
         self._conn.commit()
         return row["id"]
+
+    def get_host(self, host_id: int) -> dict | None:
+        """One host with every attribute, or None if the id is unknown."""
+        cur = self._conn.execute("SELECT * FROM hosts WHERE id = ?", (host_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    def get_host_by_uuid(self, host_uuid: str) -> dict | None:
+        """Resolve a host by its stable identity rather than by any attribute.
+
+        This is the lookup that survives a rename: a machine re-registering
+        after its label changed is still found here.
+        """
+        cur = self._conn.execute(
+            "SELECT * FROM hosts WHERE uuid = ?", (host_uuid,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    def update_host_attributes(self, host_id: int, **attrs: str | None) -> None:
+        """Record what a host currently looks like.
+
+        Only hostname, ip_address, os_family, os_version and kernel are
+        writable — the UUID is identity and is never updated, and the label is
+        the operator's handle, changed deliberately via `rename_host`.
+
+        A None value CLEARS the attribute, and that is deliberate: `collect()`
+        returns None for anything it could not observe, so a collection that
+        stops being able to see a field must retract it rather than leave a
+        stale value standing. Attributes not passed at all are left untouched,
+        which is how a caller updates one field without disturbing the rest.
+        """
+        allowed = {"hostname", "ip_address", "os_family", "os_version", "kernel"}
+        fields = {k: v for k, v in attrs.items() if k in allowed}
+        if not fields:
+            return
+
+        sets = ", ".join(f"{k} = :{k}" for k in fields)
+        self._conn.execute(
+            f"UPDATE hosts SET {sets}, "
+            "last_seen_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), "
+            "updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') "
+            "WHERE id = :host_id",
+            {**fields, "host_id": host_id},
+        )
+        self._conn.commit()
+
+    def rename_host(self, host_id: int, new_label: str) -> None:
+        """Change a host's operator-facing label, keeping its identity.
+
+        The scans already attributed to it stay attributed: they reference the
+        row, not the name. That is the whole point of the UUID.
+        """
+        self._conn.execute(
+            "UPDATE hosts SET label = ?, "
+            "updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
+            (new_label, host_id),
+        )
+        self._conn.commit()
 
     def get_host_id(self, label: str) -> int | None:
         cur = self._conn.execute("SELECT id FROM hosts WHERE label = ?", (label,))

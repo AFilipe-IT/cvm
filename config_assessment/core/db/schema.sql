@@ -12,14 +12,35 @@ CREATE TABLE IF NOT EXISTS targets (
     updated_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
--- A host is an Operating System instance a user tags scans against (e.g.
+-- A host is an Operating System instance scans are attributed to (e.g.
 -- --host web01). Optional: scans with no host tag simply never appear in
 -- any Operating-System-level rollup.
+--
+-- IDENTITY (v2). `uuid` is the host's identity and never changes once
+-- assigned at first registration. Everything an operator sees — label,
+-- hostname, ip_address — is a mutable ATTRIBUTE, because all of them do
+-- change in practice: machines get renamed, DHCP hands out a different
+-- address, a VM is cloned. Keying identity on any of them would silently
+-- split one host's history in two, or worse, merge two hosts into one.
+--
+-- `label` stays UNIQUE: it is the operator-facing handle that `--host web01`
+-- resolves through, and the uniqueness is what makes that resolution
+-- unambiguous.
 CREATE TABLE IF NOT EXISTS hosts (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    label      TEXT    NOT NULL UNIQUE,
-    created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid         TEXT    NOT NULL UNIQUE,
+    label        TEXT    NOT NULL UNIQUE,
+    hostname     TEXT,
+    ip_address   TEXT,
+    os_family    TEXT,
+    os_version   TEXT,
+    kernel       TEXT,
+    -- Wall-clock of the last successful attribute collection. NULL means the
+    -- host was registered by label alone and never inspected — a distinct
+    -- state from "inspected and found empty".
+    last_seen_at TEXT,
+    created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
 CREATE TABLE IF NOT EXISTS misconfigurations (

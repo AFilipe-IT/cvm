@@ -72,8 +72,13 @@ def _latest_scans_for_host(db: Database, host_id: int) -> list:
 
 @router.get("/registry")
 def list_hosts_registry(db: Database = Depends(get_db)) -> list[dict]:
-    """Every registered host label and id. A host is just a label scans are
-    grouped under — CVM never connects to it."""
+    """Every registered host with its identity and current attributes.
+
+    `uuid` is the identity and never changes; `label`, `hostname` and
+    `ip_address` are attributes that do. A NULL `last_seen_at` means the host
+    was registered by label and never inspected — distinct from inspected and
+    found empty.
+    """
     return db.list_hosts()
 
 
@@ -84,9 +89,14 @@ def create_host(
     _auth: None = Depends(require_api_key),
 ) -> dict:
     """Register a host label, or return the existing id if the label is
-    already known — safe to call repeatedly from a provisioning script."""
+    already known — safe to call repeatedly from a provisioning script.
+
+    A first registration mints the UUID. Calling again with the same label
+    returns the same host, identity intact.
+    """
     host_id = db.upsert_host(body.label)
-    return {"id": host_id, "label": body.label}
+    host = db.get_host(host_id) or {}
+    return {"id": host_id, "label": body.label, "uuid": host.get("uuid")}
 
 
 @router.get("/registry/{host_id}")
@@ -94,9 +104,10 @@ def get_host_detail(host_id: int, db: Database = Depends(get_db)) -> dict:
     """One host's posture: its rollup plus a per-category breakdown, computed
     over the latest scan of each service on it (so two services are compared
     fairly even when scanned at different times)."""
-    label = db.get_host_label(host_id)
-    if label is None:
+    host = db.get_host(host_id)
+    if host is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Host not found")
+    label = host["label"]
 
     results = _latest_scans_for_host(db, host_id)
     scan_dicts = [json.loads(r.model_dump_json()) for r in results]
@@ -112,6 +123,12 @@ def get_host_detail(host_id: int, db: Database = Depends(get_db)) -> dict:
     return {
         "id": host_id,
         "label": label,
+        "uuid": host["uuid"],
+        "attributes": {
+            k: host[k] for k in
+            ("hostname", "ip_address", "os_family", "os_version", "kernel",
+             "last_seen_at")
+        },
         "rollup": {
             "scans": rollup.scans,
             "total_issues": rollup.total_issues,

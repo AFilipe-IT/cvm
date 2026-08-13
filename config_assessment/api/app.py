@@ -13,7 +13,7 @@ from fastapi import FastAPI
 
 from config_assessment.api.routers import (
     builds, health, hosts, jobs, knowledge, maintenance, manage, plugins,
-    reports, scans, targets, trends, watch,
+    posture, reports, scans, targets, trends, watch,
 )
 
 
@@ -47,6 +47,7 @@ def create_app(db_path: str = "ccss.db") -> FastAPI:
     app.state.db_path = db_path
 
     app.include_router(scans.router)
+    app.include_router(posture.router)
     app.include_router(trends.router)
     app.include_router(hosts.router)
     app.include_router(targets.router)

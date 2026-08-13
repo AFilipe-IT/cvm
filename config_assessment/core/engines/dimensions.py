@@ -95,6 +95,8 @@ NOT_ASSESSED_REASONS: dict[str, str] = {
     "secrets": "Secret detection is not implemented in this build.",
     "patch": "Patch intelligence is not implemented in this build.",
     "hardening": "Platform hardening checks are not implemented in this build.",
+    "permissions": "No permissions collector has run against this system.",
+    "exposure": "No network exposure collector has run against this system.",
 }
 _DEFAULT_REASON = "No rules were evaluated for this dimension."
 

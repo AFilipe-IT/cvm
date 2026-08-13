@@ -21,16 +21,24 @@ from config_assessment.core.engines.dimensions import (
     compute_delta, dimension_of, group_by_dimension, score_dimension)
 
 
-@dataclass
-class FakeEvidence:
-    kind: str
+def FakeEvidence(kind: str) -> dict:
+    """Evidence as the production models carry it: a plain dict.
+
+    This was once a dataclass with a `.kind` attribute, which no code anywhere
+    actually produced. `dimension_of` read it with `getattr`, the tests passed,
+    and every real collector finding was silently filed under `configuration`
+    because a dict has no such attribute. A fixture shaped to match the
+    implementation rather than the data cannot catch that class of bug, so the
+    shape here is the real one.
+    """
+    return {"kind": kind}
 
 
 @dataclass
 class FakeFinding:
     temporal_score: float
     dimension: str | None = None
-    evidence: FakeEvidence | None = None
+    evidence: dict | None = None
 
 
 # ── the distinction ────────────────────────────────────────────────────
@@ -210,6 +218,66 @@ def test_v1_findings_fall_back_to_configuration():
 def test_an_unknown_declared_dimension_is_not_trusted():
     f = FakeFinding(temporal_score=5.0, dimension="invented")
     assert dimension_of(f) == "configuration"
+
+
+class TestDimensionOfRealModels:
+    """`FakeEvidence` above is an OBJECT with a `.kind` attribute; the real
+    `Directive.evidence` is a DICT, and on a `Misconfiguration` it hangs off
+    `source_directive`. These tests run against the production models, because
+    a fixture shaped to match the implementation cannot catch the two ways that
+    lookup can silently miss — and it did miss both, filing every collector
+    finding under `configuration` while appearing to work."""
+
+    @staticmethod
+    def _finding(kind: str):
+        from config_assessment.core.models import Directive, Misconfiguration
+        return Misconfiguration(
+            target_name="ubuntu2204", directive="file_mode:/etc/shadow",
+            bad_value="0644", ac="L", c="C", i="N", a="N", temporal_score=7.5,
+            source_directive=Directive(
+                name="file_mode:/etc/shadow", value="0644",
+                evidence={"kind": kind, "location": "/etc/shadow"}))
+
+    def test_dict_evidence_on_the_directive_picks_permissions(self):
+        assert dimension_of(self._finding("file_metadata")) == "permissions"
+
+    def test_dict_evidence_on_the_directive_picks_exposure(self):
+        assert dimension_of(self._finding("listening_socket")) == "exposure"
+
+    def test_a_config_file_finding_stays_configuration(self):
+        assert dimension_of(self._finding("config_file")) == "configuration"
+
+    def test_a_v1_finding_with_no_evidence_stays_configuration(self):
+        from config_assessment.core.models import Directive, Misconfiguration
+        f = Misconfiguration(
+            target_name="nginx", directive="ssl_protocols", bad_value="TLSv1",
+            ac="L", c="P", i="N", a="N", temporal_score=5.0,
+            source_directive=Directive(name="ssl_protocols", value="TLSv1"))
+        assert dimension_of(f) == "configuration"
+
+    def test_a_bare_directive_is_classified_too(self):
+        """A caller holding the observation rather than the matched rule is
+        asking the same question."""
+        from config_assessment.core.models import Directive
+        d = Directive(name="listen:tcp/0.0.0.0:8080", value="nginx",
+                      evidence={"kind": "listening_socket"})
+        assert dimension_of(d) == "exposure"
+
+    def test_collector_output_buckets_into_its_own_dimension(self):
+        """End to end against real collector output: the whole point of the
+        phase is that these do NOT land in `configuration`."""
+        from config_assessment.core.collectors import exposure as exposure_mod
+        from config_assessment.core.models import Directive, Misconfiguration
+        directive = Directive(
+            name="listen:tcp/0.0.0.0:8080", value="nginx",
+            evidence={"kind": "listening_socket",
+                      "location": "tcp/0.0.0.0:8080", "world_facing": True})
+        assert exposure_mod  # the collector is what produces this shape
+        buckets = group_by_dimension([Misconfiguration(
+            target_name="ubuntu2204", directive=directive.name,
+            bad_value="nginx", ac="L", c="P", i="P", a="P",
+            temporal_score=8.2, source_directive=directive)])
+        assert list(buckets) == ["exposure"]
 
 
 def test_grouping_buckets_by_dimension():

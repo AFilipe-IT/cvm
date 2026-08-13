@@ -248,13 +248,23 @@ def dimension_of(finding: object) -> str:
     Findings produced before the dimension field existed carry no marker, so
     they fall back to `configuration`: every v1 rule was, by construction,
     read out of a configuration file.
+
+    The evidence is a DICT (`Directive.evidence`), not an object, and on a
+    `Misconfiguration` it hangs off `source_directive` — the finding is the
+    rule that matched, the directive is the observation that matched it. Both
+    are read here, because a caller holding either one is asking the same
+    question.
     """
     dimension = getattr(finding, "dimension", None)
     if dimension in DIMENSION_IDS:
         return dimension
 
     evidence = getattr(finding, "evidence", None)
-    kind = getattr(evidence, "kind", None)
+    if not evidence:
+        directive = getattr(finding, "source_directive", None)
+        evidence = getattr(directive, "evidence", None)
+
+    kind = evidence.get("kind") if isinstance(evidence, dict) else None
     return _EVIDENCE_DIMENSION.get(kind, "configuration")
 
 

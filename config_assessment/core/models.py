@@ -63,6 +63,20 @@ class Directive(BaseModel):
     source_file: str = ""
     line_number: Optional[int] = None
 
+    # How this directive was observed (CONTRATO_API_V2.md §3). Empty for
+    # directives read from a configuration file — the v1 case, fully described
+    # by source_file/line_number alone.
+    #
+    # Collectors that observe SYSTEM STATE rather than file text fill this in:
+    # a file mode carries owner and group, a listening socket carries the
+    # process holding it. Neither fits source_file/line_number, and dropping
+    # them would leave the console unable to show where a finding came from —
+    # provenance being the reason the field exists.
+    #
+    # Shape: {"kind": "file_metadata"|"listening_socket"|"package", ...}; the
+    # remaining keys depend on the kind.
+    evidence: dict = Field(default_factory=dict)
+
     @field_validator("name", "value", mode="after")
     @classmethod
     def _strip(cls, v: str) -> str:

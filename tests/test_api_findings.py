@@ -153,6 +153,52 @@ class TestFindingSerialization:
         assert ev["line"] == 142
         assert "ServerTokens" in ev["snippet"]
 
+    def test_a_file_mode_finding_carries_metadata_not_a_line(self):
+        """A mode is a property of the inode. Reporting a line number and a
+        snippet for it would attribute the finding to a line of config text
+        that does not exist."""
+        body = serialize_finding(self._misconfig(source_directive=Directive(
+            name="file_mode:/etc/shadow", value="0644",
+            source_file="/etc/shadow",
+            evidence={"kind": "file_metadata", "location": "/etc/shadow",
+                      "mode": "0644", "owner": "root", "group": "shadow"})))
+        ev = body["evidence"]
+        assert ev["kind"] == "file_metadata"
+        assert ev["location"] == "/etc/shadow"
+        assert ev["mode"] == "0644"
+        assert ev["owner"] == "root"
+        assert ev["group"] == "shadow"
+        assert "line" not in ev and "snippet" not in ev
+
+    def test_a_socket_finding_carries_the_process(self):
+        body = serialize_finding(self._misconfig(source_directive=Directive(
+            name="listen:tcp/0.0.0.0:6379", value="redis-server",
+            evidence={"kind": "listening_socket",
+                      "location": "tcp/0.0.0.0:6379",
+                      "process": "redis-server", "pid": 812})))
+        ev = body["evidence"]
+        assert ev["kind"] == "listening_socket"
+        assert ev["location"] == "tcp/0.0.0.0:6379"
+        assert ev["process"] == "redis-server"
+        assert ev["pid"] == 812
+
+    def test_an_unresolved_process_stays_null_rather_than_guessed(self):
+        body = serialize_finding(self._misconfig(source_directive=Directive(
+            name="listen:tcp/0.0.0.0:6379", value="unknown",
+            evidence={"kind": "listening_socket",
+                      "location": "tcp/0.0.0.0:6379",
+                      "process": None, "pid": None})))
+        assert body["evidence"]["process"] is None
+
+    def test_a_v1_directive_without_evidence_keeps_the_config_file_shape(self):
+        """The v1 path must be untouched: no collector fills `evidence`, and
+        those findings still report file, line and snippet."""
+        body = serialize_finding(self._misconfig(source_directive=Directive(
+            name="ServerTokens", value="Full",
+            source_file="/etc/apache2/apache2.conf", line_number=142)))
+        assert body["evidence"]["kind"] == "config_file"
+        assert body["evidence"]["line"] == 142
+
     def test_benchmark_references_are_carried(self):
         body = serialize_finding(self._misconfig(cis_section="2.5",
                                                  cce_id="CCE-12345-6"))

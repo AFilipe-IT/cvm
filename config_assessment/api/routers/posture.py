@@ -29,11 +29,43 @@ router = APIRouter(prefix="/api/v1/posture", tags=["posture"])
 # Dimensions this build actually evaluates. The rest are reported
 # `not_assessed` — the contract is explicit that they must still appear.
 #
-# `permissions` and `exposure` are listed here only once their collectors land
-# (Fase C); until then a build that claimed to assess them would be reporting
-# clean for something it never looked at, which is the failure this whole
+# Every target reads configuration, so a scan of any kind assesses that
+# dimension. The system-state dimensions are assessed only by targets that
+# actually run the collectors: scanning an nginx.conf looks at no inode and no
+# socket, and reporting permissions as clean off the back of it would be
+# claiming a clean bill for something never examined — the failure this whole
 # model exists to prevent.
-IMPLEMENTED_DIMENSIONS: frozenset[str] = frozenset({"configuration"})
+#
+# Keyed by target name rather than a flat set for exactly that reason: whether
+# a dimension was assessed is a property of what the scan DID, not of what the
+# build is capable of.
+TARGET_DIMENSIONS: dict[str, frozenset[str]] = {
+    "ubuntu2204": frozenset({"configuration", "permissions", "exposure"}),
+}
+_DEFAULT_DIMENSIONS: frozenset[str] = frozenset({"configuration"})
+
+# Every dimension SOME target in this build can assess. Distinct from what a
+# given host's scans did assess: this answers "could this ever be filled in?",
+# which is what decides whether "not implemented" is an honest explanation.
+IMPLEMENTABLE_DIMENSIONS: frozenset[str] = frozenset(
+    _DEFAULT_DIMENSIONS.union(*TARGET_DIMENSIONS.values()))
+
+# Backwards-compatible alias: the dimensions this build implements at all.
+IMPLEMENTED_DIMENSIONS: frozenset[str] = IMPLEMENTABLE_DIMENSIONS
+
+
+def assessed_dimensions(results: list) -> frozenset[str]:
+    """Which dimensions the given scans actually examined.
+
+    The union across scans: a host scanned with both `nginx` and `ubuntu2204`
+    has had its configuration AND its system state examined, and the posture
+    should say so.
+    """
+    covered: set[str] = set()
+    for r in results:
+        covered |= TARGET_DIMENSIONS.get(
+            getattr(r, "target_name", ""), _DEFAULT_DIMENSIONS)
+    return frozenset(covered)
 
 
 def _serialize_dimension(d, assessed_at: str | None,
@@ -82,14 +114,13 @@ def get_posture(host_id: int | None = None, db: Database = Depends(get_db)) -> d
     # would report an unexamined host as examined-and-clean, which is the
     # precise failure the dimension model exists to prevent. `None` — never
     # looked — is the honest answer, so `assessed` gates the whole set.
-    assessed = bool(results)
+    assessed = assessed_dimensions(results)
 
     previous = _previous_scores(db, host_id)
     dimensions = [
         score_dimension(
             dim_id,
-            buckets.get(dim_id, [])
-            if assessed and dim_id in IMPLEMENTED_DIMENSIONS else None,
+            buckets.get(dim_id, []) if dim_id in assessed else None,
             delta=compute_delta(
                 max(buckets[dim_id]) if buckets.get(dim_id) else None,
                 previous.get(dim_id)),
@@ -118,9 +149,13 @@ def get_posture(host_id: int | None = None, db: Database = Depends(get_db)) -> d
             "percent": round(posture.coverage * 100),
         },
         "dimensions": [
+            # With no scans at all, "not implemented" would be the wrong
+            # explanation for a dimension this build CAN do — the real answer
+            # is that nothing has been examined yet. Dimensions no target
+            # implements keep the engine's own reason.
             _serialize_dimension(
                 d, assessed_at,
-                None if assessed or d.id not in IMPLEMENTED_DIMENSIONS
+                None if results or d.id not in IMPLEMENTABLE_DIMENSIONS
                 else "No assessment has been run against this host yet.")
             for d in posture.dimensions
         ],

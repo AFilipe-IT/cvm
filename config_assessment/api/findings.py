@@ -76,10 +76,38 @@ def _evidence(m) -> dict | None:
     the knowledge base has no evidence yet — it describes what WOULD be a
     finding — and saying otherwise would attribute an observation to a file
     nobody read.
+
+    The SHAPE depends on how the directive was observed (contract §3): the
+    extra fields differ per kind, and `line`/`snippet` belong to `config_file`
+    alone. A file mode has no source line, and reporting one would attribute
+    an inode property to a line of text that does not exist.
     """
     directive = getattr(m, "source_directive", None)
     if directive is None:
         return None
+
+    # Collectors fill this in; a directive parsed out of a config file leaves
+    # it empty, which is the v1 case and is unchanged below.
+    observed = getattr(directive, "evidence", None) or {}
+    kind = observed.get("kind", "config_file")
+
+    if kind == "file_metadata":
+        return {
+            "kind": kind,
+            "location": observed.get("location") or directive.source_file or None,
+            "mode": observed.get("mode"),
+            "owner": observed.get("owner"),
+            "group": observed.get("group"),
+        }
+
+    if kind == "listening_socket":
+        return {
+            "kind": kind,
+            "location": observed.get("location"),
+            "process": observed.get("process"),
+            "pid": observed.get("pid"),
+        }
+
     return {
         "kind": "config_file",
         "location": directive.source_file or None,

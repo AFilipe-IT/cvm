@@ -306,3 +306,74 @@ class TestPostureByHost:
         assert empty["overall"]["score"] is None, \
             "a host that was never scanned has no posture, not a clean one"
         assert empty["coverage"]["dimensions_assessed"] == 0
+
+
+# ── which dimensions a scan actually assessed ──────────────────────────
+
+class TestAssessedDimensionsFollowTheTarget:
+    """Being able to assess a dimension is not the same as having assessed it.
+
+    Scanning an nginx.conf examines no inode and no socket, so permissions and
+    exposure must come back `not_assessed` — reporting them clean off the back
+    of a config-file scan is precisely the failure the model exists to prevent,
+    and it is the failure a build-wide "implemented" flag would reintroduce.
+    """
+
+    @staticmethod
+    def _result(target_name):
+        class R:
+            pass
+        r = R()
+        r.target_name = target_name
+        return r
+
+    def test_a_config_only_target_assesses_configuration_alone(self):
+        from config_assessment.api.routers.posture import assessed_dimensions
+        assert assessed_dimensions([self._result("nginx")]) == {"configuration"}
+
+    def test_the_system_state_target_assesses_all_three(self):
+        from config_assessment.api.routers.posture import assessed_dimensions
+        assert assessed_dimensions([self._result("ubuntu2204")]) == {
+            "configuration", "permissions", "exposure"}
+
+    def test_coverage_is_the_union_across_scans(self):
+        """A host scanned with both has had its config AND its system state
+        examined, and the posture should say so."""
+        from config_assessment.api.routers.posture import assessed_dimensions
+        assert assessed_dimensions([
+            self._result("nginx"), self._result("ubuntu2204"),
+        ]) == {"configuration", "permissions", "exposure"}
+
+    def test_no_scans_assess_nothing(self):
+        from config_assessment.api.routers.posture import assessed_dimensions
+        assert assessed_dimensions([]) == frozenset()
+
+    def test_an_unknown_target_claims_only_configuration(self):
+        """A plugin added later must not be assumed to collect system state."""
+        from config_assessment.api.routers.posture import assessed_dimensions
+        assert assessed_dimensions([self._result("some-future-plugin")]) == {
+            "configuration"}
+
+    def test_a_config_scan_leaves_permissions_unassessed_over_http(
+            self, client, dummy_config_file):
+        r = client.post("/api/v1/scans", json={"input_path": dummy_config_file})
+        assert r.status_code in (200, 201), r.text
+
+        body = client.get("/api/v1/posture").json()
+        by_id = {d["id"]: d for d in body["dimensions"]}
+        assert by_id["configuration"]["status"] != "not_assessed"
+        for dim in ("permissions", "exposure"):
+            assert by_id[dim]["status"] == "not_assessed", \
+                f"{dim} was never examined by a config-file scan"
+            assert by_id[dim]["score"] is None
+
+    def test_an_implementable_dimension_says_so_rather_than_not_implemented(
+            self, client):
+        """With nothing scanned, permissions is unassessed because nobody ran
+        a scan — not because the build lacks the feature. Saying 'not
+        implemented' would send an operator hunting for a feature that is
+        right there."""
+        body = client.get("/api/v1/posture").json()
+        by_id = {d["id"]: d for d in body["dimensions"]}
+        assert "has been run" in by_id["permissions"]["not_assessed_reason"]
+        assert "not implemented" in by_id["patch"]["not_assessed_reason"].lower()

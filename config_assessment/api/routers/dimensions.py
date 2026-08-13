@@ -21,7 +21,7 @@ from config_assessment.api.deps import get_db
 from config_assessment.api.findings import (
     serialize_finding, severity_breakdown, target_labels)
 from config_assessment.api.routers.posture import (
-    IMPLEMENTED_DIMENSIONS, _latest_results)
+    IMPLEMENTABLE_DIMENSIONS, _latest_results, assessed_dimensions)
 from config_assessment.core.db.database import Database
 from config_assessment.core.engines.dimensions import (
     DIMENSION_IDS, DIMENSION_LABELS, dimension_of, score_dimension)
@@ -60,7 +60,10 @@ def get_dimension(dimension_id: str, host_id: int | None = None,
                               "message": "Host not found.", "detail": None}})
 
     results = _latest_results(db, host_id)
-    assessed = bool(results) and dimension_id in IMPLEMENTED_DIMENSIONS
+    # Whether this dimension was examined is a property of what the scans DID
+    # (which targets ran), not of what the build could do — scanning an
+    # nginx.conf examines no inode and no socket.
+    assessed = dimension_id in assessed_dimensions(results)
 
     mine = [f for r in results for f in r.issues
             if dimension_of(f) == dimension_id] if assessed else []
@@ -91,8 +94,12 @@ def get_dimension(dimension_id: str, host_id: int | None = None,
         "trend": _trend(db, dimension_id, host_id) if assessed else [],
     }
     if not scored.assessed:
+        # "Not implemented" is only honest for a dimension no target can do.
+        # When the build CAN assess it and simply has not here, say that
+        # instead — otherwise an operator goes hunting for a missing feature.
         body["not_assessed_reason"] = (
-            scored.not_assessed_reason if dimension_id not in IMPLEMENTED_DIMENSIONS
+            scored.not_assessed_reason
+            if dimension_id not in IMPLEMENTABLE_DIMENSIONS
             else "No assessment has been run against this host yet.")
     return body
 

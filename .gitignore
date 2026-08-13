@@ -83,3 +83,12 @@ tese-pt/
 
 # Cache do Vite se algum comando npm/npx correr fora de frontend/
 node_modules/
+
+# Imagens e estado da VM de validação. Os scripts de vm/ são versionados;
+# tudo o que eles geram não é — a imagem tem GB e reconstrói-se do zero
+# com vm/provision.sh (ver vm/README.md).
+vm/images/
+vm/run/
+*.qcow2
+*.img
+*.iso

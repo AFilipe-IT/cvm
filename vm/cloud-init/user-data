@@ -1,0 +1,85 @@
+#cloud-config
+# ---------------------------------------------------------------------------
+# VM de validação do CVM — Ubuntu 22.04 LTS
+#
+# Este ficheiro é a definição do alvo. Tudo o que a VM tem foi declarado aqui,
+# o que é o que permite reconstruí-la do zero e obter o mesmo sistema: sem
+# passos manuais, sem estado acumulado, sem "acho que também instalei X".
+#
+# As falhas de configuração mais abaixo são INSERIDAS DE PROPÓSITO. Esta VM é
+# um alvo de teste isolado atrás de NAT do utilizador (sem porta exposta ao
+# exterior além do SSH em loopback) e não deve ser usada para mais nada.
+# ---------------------------------------------------------------------------
+
+hostname: cvm-target-u2204
+manage_etc_hosts: true
+
+users:
+  - name: cvm
+    groups: [sudo]
+    shell: /bin/bash
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+    lock_passwd: false
+    # Palavra-passe 'cvm' — só serve na consola série da VM, que é local.
+    # O acesso a sério é por chave; ver ssh_authorized_keys abaixo.
+    plain_text_passwd: cvm
+    ssh_authorized_keys:
+      - SSH_PUBKEY_PLACEHOLDER
+
+ssh_pwauth: false
+
+package_update: true
+package_upgrade: false
+
+packages:
+  - nginx
+  - openssh-server
+  - curl
+  - ca-certificates
+
+write_files:
+  # ── Falha de configuração (dimensão: configuração) ────────────────────
+  # server_tokens on expõe a versão exacta do nginx no cabeçalho Server e nas
+  # páginas de erro, o que dá a um atacante o mapa de CVEs aplicáveis.
+  - path: /etc/nginx/conf.d/cvm-target.conf
+    permissions: '0644'
+    content: |
+      # Alvo de teste do CVM — configuração deliberadamente insegura.
+      server_tokens on;
+      ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+      add_header X-Frame-Options "";
+
+  # ── Falha de exposição (dimensão: exposição) ──────────────────────────
+  # Um serviço de estado a escutar em todas as interfaces em vez de loopback.
+  - path: /etc/nginx/sites-available/exposed-status
+    permissions: '0644'
+    content: |
+      server {
+          listen 0.0.0.0:8080;
+          server_name _;
+          location /nginx_status {
+              stub_status on;
+              # Sem 'allow 127.0.0.1; deny all;' — de propósito.
+          }
+      }
+
+  # Marca de proveniência: identifica a VM como alvo sintético, para que
+  # nenhum resultado desta máquina seja confundido com um sistema real.
+  - path: /etc/cvm-target
+    permissions: '0444'
+    content: |
+      CVM validation target — Ubuntu 22.04 LTS
+      Provisioned by vm/provision.sh from vm/cloud-init/user-data.
+      Misconfigurations here are deliberate. Do not use for anything else.
+
+runcmd:
+  - ln -sf /etc/nginx/sites-available/exposed-status /etc/nginx/sites-enabled/
+  # ── Falhas de permissões (dimensão: permissões) ──────────────────────
+  # O CIS Ubuntu 22.04 exige 0640 no /etc/shadow e 0644 no /etc/passwd.
+  - chmod 0644 /etc/shadow
+  - chmod 0666 /etc/nginx/nginx.conf
+  - systemctl enable --now nginx
+  - systemctl restart nginx
+  - touch /var/lib/cvm-provisioned
+
+final_message: "CVM target ready after $UPTIME seconds."

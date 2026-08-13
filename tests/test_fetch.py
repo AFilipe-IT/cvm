@@ -71,11 +71,14 @@ def test_catalog_loads_and_lists_services(fetcher):
     assert len(rows) >= 40
     # Documentation keys (leading underscore) must be filtered out.
     assert not any(r["service"].startswith("_") for r in rows)
-    # Each source is a well-formed stigviewer entry with a non-empty slug.
+    # Each source is a well-formed entry of a supported type. The type is no
+    # longer uniform: the OS targets gained an 'ssg' source when stigviewer
+    # started answering 401 to everything (see test_ssg_source.py).
     for r in rows:
         assert r["sources"]
         for s in r["sources"]:
-            assert s["type"] == "stigviewer"
+            assert s["type"] in {"stigviewer", "ssg", "github_release",
+                                 "disa_stig"}
             assert s["format"] == "xccdf"
 
 

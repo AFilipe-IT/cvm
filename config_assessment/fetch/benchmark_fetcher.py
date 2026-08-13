@@ -18,6 +18,20 @@ and public.cyber.mil is a JS-rendered SPA with no static links — neither works
 for individual services. See config_assessment/fetch/catalog.json for the
 service→slug map.
 
+UPDATE (2026-08-13): **stigviewer.com now requires authentication.** Every slug
+returns HTTP 401 — verified against canonical_ubuntu_2204_lts, f5_nginx and
+kubernetes — so all catalogued stigviewer sources are unreachable. The failure
+is reported explicitly (see `_SOURCE_UNAVAILABLE`) rather than as a generic
+network error, because "the source closed" and "this target does not exist" call
+for different responses from the user.
+
+For OS-level targets the replacement is the SCAP Security Guide
+(ComplianceAsCode releases), reached through source type "ssg" and implemented
+in ssg_source.py. It is public, needs no authentication, and carries the
+expected value structurally — see that module for why that matters. Per-service
+benchmarks (nginx, redis, …) have no confirmed replacement yet and must be
+installed from a local file via `plugin add --source`.
+
 The fetcher converts the JSON to a DISA-style XCCDF 1.1 XML file. That file goes
 straight through the existing XCCDF branch of `plugin add`
 (config_assessment.build.benchmark_extractor.XCCDFExtractor), so no new parser is
@@ -41,6 +55,14 @@ _XCCDF_NS = "http://checklists.nist.gov/xccdf/1.1"
 _STIGVIEWER_EXPORT = "https://www.stigviewer.com/stigs/{slug}/export/json"
 _USER_AGENT = "caspar/0.1 (+benchmark-fetch)"
 _TIMEOUT = 30
+
+# Raised in place of a bare "HTTP 401" so the user is not left guessing whether
+# they typed the wrong service name.
+_SOURCE_UNAVAILABLE = (
+    "stigviewer.com now requires authentication (verified 2026-08-13) and no "
+    "longer serves '{slug}' — or any other slug — anonymously. For OS targets "
+    "use an 'ssg' source (SCAP Security Guide); for a single service, download "
+    "the STIG or CIS PDF manually and run: plugin add --source <file>")
 
 
 class FetchError(RuntimeError):
@@ -97,6 +119,8 @@ class BenchmarkFetcher:
         for source in entry.get("sources", []):
             stype = source.get("type")
             try:
+                if stype == "ssg":
+                    return self._fetch_ssg(source, dest, service.lower())
                 if stype == "stigviewer":
                     return self._fetch_stigviewer(source, dest, service.lower())
                 if stype == "github_release":
@@ -111,6 +135,46 @@ class BenchmarkFetcher:
             f"All sources failed for '{service}': " + " | ".join(errors))
 
     # ── source implementations ────────────────────────────────────────
+    def _fetch_ssg(self, source: dict, dest_dir: Path, service: str) -> str:
+        """Download a SCAP Security Guide release and emit it as XCCDF.
+
+        Unlike the STIG path, the rules carry a resolved (identifier, value)
+        pair for roughly half the benchmark, recovered from the SSG template
+        blocks without an LLM. That pair is written into the <fixtext> so the
+        existing XCCDF extractor sees an unambiguous instruction, and is also
+        emitted as attributes so a later build can tell derived values from
+        inferred ones. See ssg_source.py.
+        """
+        from config_assessment.fetch.ssg_source import (
+            SSGArchive, SSGError, ssg_download_url)
+
+        product = source.get("product")
+        if not product:
+            raise FetchError("ssg source needs a 'product' (e.g. 'ubuntu2204')")
+
+        version = source.get("version", "")
+        level = source.get("level", "l1_server")
+        url = source.get("url") or ssg_download_url(
+            version or None) if version else ssg_download_url()
+
+        archive = dest_dir / f"scap-security-guide-{version or 'pinned'}.tar.bz2"
+        if not archive.exists():
+            archive.write_bytes(_http_get(url, binary=True))
+
+        try:
+            rules = SSGArchive(archive).resolve(product, level=level)
+        except SSGError as exc:
+            raise FetchError(f"SSG archive unusable: {exc}") from exc
+        if not rules:
+            raise FetchError(
+                f"SSG product '{product}' yielded no rules at level '{level}'")
+
+        title = source.get("title") or f"{service} CIS Benchmark ({product})"
+        xml = _ssg_rules_to_xccdf(title, version, rules)
+        out = dest_dir / f"SSG_{product}_{level}.xml"
+        out.write_text(xml, encoding="utf-8")
+        return str(out)
+
     def _fetch_stigviewer(self, source: dict, dest_dir: Path, service: str) -> str:
         """Download the stigviewer STIG JSON and write it as XCCDF XML.
 
@@ -124,7 +188,14 @@ class BenchmarkFetcher:
             raise FetchError("stigviewer source has no 'slug'")
 
         url = _STIGVIEWER_EXPORT.format(slug=slug)
-        raw = _http_get(url)
+        try:
+            raw = _http_get(url)
+        except FetchError as exc:
+            # Distinguish "the source closed" from "this target is missing":
+            # the first is nothing the user can fix by picking another name.
+            if "HTTP 401" in str(exc) or "HTTP 403" in str(exc):
+                raise FetchError(_SOURCE_UNAVAILABLE.format(slug=slug)) from exc
+            raise
         try:
             data = json.loads(raw)
         except json.JSONDecodeError as exc:
@@ -226,6 +297,60 @@ def _clean_version_label(version: str) -> str:
     """Normalise a stigviewer version like 'V2R2' → 'V2R2' (strip spaces)."""
     m = re.search(r"V\s*(\d+)\s*R\s*(\d+)", version, re.IGNORECASE)
     return f"V{m.group(1)}R{m.group(2)}" if m else re.sub(r"\s+", "", version)
+
+
+def _ssg_rules_to_xccdf(title: str, version: str, rules: list) -> str:
+    """Render resolved SSG rules as XCCDF 1.1 for the existing extractor.
+
+    Two things travel beyond what a STIG carries, both as attributes the
+    extractor ignores but a later build step can read:
+
+      cvm:dimension     which of the v2 dimensions the rule observes
+      cvm:deterministic "true" when identifier and value came from the SSG
+                        template rather than from an LLM reading prose
+
+    Keeping them in the XML means the provenance of every rule survives the
+    handoff to `plugin add`, instead of being reconstructed by guesswork.
+    """
+    parts: list[str] = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        f'<Benchmark xmlns="{_XCCDF_NS}" id="CVM_ssg_fetch">',
+        f"  <title>{escape(title)}</title>",
+    ]
+    if version:
+        parts.append(f"  <version>{escape(version)}</version>")
+
+    q = {chr(34): "&quot;"}
+    for r in rules:
+        rid = f"{r.rule_name}" if r.rule_name else r.control_id
+        parts.append(
+            f'  <Rule id="{escape(rid, q)}" severity="{escape(r.severity)}" '
+            f'cvm:dimension="{escape(r.dimension, q)}" '
+            f'cvm:deterministic="{"true" if r.deterministic else "false"}">')
+        ctitle = f"{r.control_id} {r.control_title}".strip()
+        parts.append(f"    <title>{escape(ctitle)}</title>")
+        parts.append(f"    <fixtext>{escape(r.fixtext)}</fixtext>")
+        parts.append('    <check system="C-SSG">')
+        # The rationale is what the LLM needs to justify CCSS metrics; the CCE
+        # is ground truth for score validation, so both go in the check body.
+        check = r.rationale or r.description
+        if r.cce:
+            check = f"{check}\n\nCCE: {r.cce}".strip()
+        parts.append(f"      <check-content>{escape(check)}</check-content>")
+        parts.append("    </check>")
+        parts.append("  </Rule>")
+
+    parts.append("</Benchmark>")
+    xml = "\n".join(parts)
+
+    # The cvm: attributes need a declared prefix or ElementTree rejects the
+    # document; declare it on the root rather than per-rule.
+    xml = xml.replace(
+        f'<Benchmark xmlns="{_XCCDF_NS}"',
+        f'<Benchmark xmlns="{_XCCDF_NS}" xmlns:cvm="https://github.com/AFilipe-IT/cvm"',
+        1)
+    ET.fromstring(xml)
+    return xml
 
 
 def _stig_json_to_xccdf(title: str, version: str, groups: list[dict]) -> str:

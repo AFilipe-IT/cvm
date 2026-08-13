@@ -13,46 +13,65 @@ import {
   TimeStamp,
 } from "@/components/cvm/primitives";
 import { TechIcon } from "@/components/cvm/primitives";
-import { dimensionById, findingsByDimension, portTable } from "@/lib/cvm/data";
+import { useDimension } from "@/lib/cvm/api";
+import { ErrorState, LoadingState } from "@/components/cvm/states";
 import { DIMENSION_META, severityVar } from "@/lib/cvm/ui";
-import type { DimensionId, Severity } from "@/lib/cvm/types";
+import type { DimensionId, Finding, Severity } from "@/lib/cvm/types";
+
+/** The six axes of the model; the API 404s on anything else. */
+const DIMENSION_IDS: DimensionId[] = [
+  "configuration",
+  "permissions",
+  "exposure",
+  "secrets",
+  "patch",
+  "hardening",
+];
 
 export const Route = createFileRoute("/dimensions/$dimensionId")({
+  // Validated against the model's own ids rather than against loaded data: a
+  // dimension is a real axis whether or not it has been assessed, so an
+  // unassessed one must still route — it renders the "what this would
+  // measure" panel — while a misspelling is a genuine 404.
   loader: ({ params }) => {
-    const d = dimensionById(params.dimensionId);
-    if (!d) throw notFound();
-    return { id: d.id };
-  },
-  head: ({ loaderData }) => {
-    const d = loaderData ? dimensionById(loaderData.id) : null;
-    if (!d) {
-      return { meta: [{ title: "Unavailable — CVM" }, { name: "robots", content: "noindex" }] };
+    if (!DIMENSION_IDS.includes(params.dimensionId as DimensionId)) {
+      throw notFound();
     }
-    const title = `${d.label} — CVM`;
-    const description =
-      d.status === "not_assessed"
-        ? `${d.label} has not been assessed in this engagement. See what it would measure.`
-        : `${d.label} risk score ${d.score?.toFixed(1)} (${d.severity}) with ${d.findings_count} open findings.`;
-    return {
-      meta: [
-        { title },
-        { name: "description", content: description },
-        { property: "og:title", content: title },
-        { property: "og:description", content: description },
-      ],
-    };
+    return { id: params.dimensionId as DimensionId };
   },
+  // The title no longer carries the score. It used to be derived from the
+  // mock, which was available synchronously; the real score arrives after the
+  // route renders, and a title claiming a number the page has not fetched
+  // would be guesswork.
+  head: () => ({ meta: [{ title: "Dimension — CVM" }] }),
   component: DimensionDetail,
 });
 
 function DimensionDetail() {
   const { id } = Route.useLoaderData();
-  const d = dimensionById(id)!;
-  const meta = DIMENSION_META[id as DimensionId];
+  const { data: d, isLoading, error } = useDimension(id);
+  const meta = DIMENSION_META[id];
   const Icon = meta.icon;
-  const items = findingsByDimension(id);
-  const [selected, setSelected] = useState<string | null>(items[0]?.id ?? null);
+  const items = d?.findings ?? [];
+  const [selected, setSelected] = useState<string | null>(null);
   const current = items.find((f) => f.id === selected) ?? items[0];
+
+  // The label is only known once the dimension loads, so the shell falls back
+  // to the static one from DIMENSION_META rather than rendering an empty title.
+  if (isLoading) {
+    return (
+      <AppShell title={meta.short}>
+        <LoadingState label="Loading dimension…" />
+      </AppShell>
+    );
+  }
+  if (error || !d) {
+    return (
+      <AppShell title={meta.short}>
+        <ErrorState error={error} />
+      </AppShell>
+    );
+  }
 
   if (d.status === "not_assessed") {
     return (
@@ -107,6 +126,16 @@ function DimensionDetail() {
   }
 
   const bands: Severity[] = ["Critical", "High", "Medium", "Low"];
+
+  // The exposure panel is built from the findings' own evidence rather than a
+  // separate endpoint: a socket only appears here because a rule fired on it,
+  // so the table and the findings list can never disagree.
+  const sockets = items.flatMap((finding) => {
+    const evidence = finding.evidence;
+    return evidence && evidence.kind === "listening_socket"
+      ? [{ finding, socket: evidence }]
+      : [];
+  });
   const dist = bands.map((s) => ({
     severity: s,
     count: items.filter((f) => f.severity === s).length,
@@ -168,9 +197,16 @@ function DimensionDetail() {
         </Panel>
 
         <Panel className="xl:col-span-6">
-          <PanelHeader title="Score trend" hint="Last 7 assessments" />
+          <PanelHeader
+            title="Score trend"
+            hint={`${(d.trend ?? []).length} assessment${(d.trend ?? []).length === 1 ? "" : "s"}`}
+          />
           <div className="px-3 py-4">
-            <TrendArea data={d.trend ?? []} height={196} />
+            {/* The API names its timestamps `at`; the chart takes `t`. */}
+            <TrendArea
+              data={(d.trend ?? []).map((p) => ({ t: p.at, score: p.score }))}
+              height={196}
+            />
           </div>
         </Panel>
 
@@ -193,14 +229,17 @@ function DimensionDetail() {
           </div>
         </Panel>
 
-        {id === "exposure" ? (
+        {id === "exposure" && sockets.length ? (
           <Panel className="xl:col-span-12">
-            <PanelHeader title="Listening ports" hint="Bound interface and reachability per service" />
+            <PanelHeader
+              title="Listening sockets"
+              hint="Bound address and owning process, as observed"
+            />
             <div className="scroll-x">
               <table className="w-full min-w-[720px] text-left text-sm">
                 <thead>
                   <tr className="border-b border-border">
-                    {["Port", "Service", "Target", "Bind", "Reachable", "Risk"].map((h) => (
+                    {["Bound address", "Process", "PID", "Target", "Reachable", "Risk"].map((h) => (
                       <th key={h} className="section-label px-5 py-2 font-semibold">
                         {h}
                       </th>
@@ -208,19 +247,31 @@ function DimensionDetail() {
                   </tr>
                 </thead>
                 <tbody>
-                  {portTable.map((p) => (
-                    <tr key={p.port + p.service} className="border-b border-border last:border-0">
-                      <td className="num px-5 py-2.5 font-mono text-xs">{p.port}</td>
-                      <td className="px-5 py-2.5 font-mono text-xs">{p.service}</td>
+                  {sockets.map(({ finding, socket }) => (
+                    <tr key={finding.id} className="border-b border-border last:border-0">
+                      <td className="num px-5 py-2.5 font-mono text-xs">{socket.location}</td>
+                      {/* An unresolved owner is shown as unknown, not blank:
+                          the socket is real either way, and a blank cell reads
+                          as a rendering glitch rather than a limit of what
+                          could be observed without root. */}
+                      <td className="px-5 py-2.5 font-mono text-xs">
+                        {socket.process ?? (
+                          <span className="text-muted-foreground">unknown</span>
+                        )}
+                      </td>
+                      <td className="num px-5 py-2.5 font-mono text-xs">
+                        {socket.pid ?? <span className="text-muted-foreground">—</span>}
+                      </td>
                       <td className="px-5 py-2.5">
                         <span className="flex items-center gap-2">
-                          <TechIcon iconKey={p.icon_key} size="sm" />
-                          <span className="text-xs">{p.target_label}</span>
+                          <TechIcon iconKey={finding.target} size="sm" />
+                          <span className="text-xs">{finding.target_label}</span>
                         </span>
                       </td>
-                      <td className="num px-5 py-2.5 font-mono text-xs">{p.bind}</td>
                       <td className="px-5 py-2.5 text-xs">
-                        {p.reachable ? (
+                        {socket.world_facing === null ? (
+                          <span className="text-muted-foreground">not classified</span>
+                        ) : socket.world_facing ? (
                           <span className="text-sev-high">beyond localhost</span>
                         ) : (
                           <span className="text-muted-foreground">localhost only</span>
@@ -228,8 +279,8 @@ function DimensionDetail() {
                       </td>
                       <td className="px-5 py-2.5">
                         <span className="flex items-center gap-2">
-                          <Score value={p.score} severity={p.severity} size="sm" />
-                          <SeverityBadge severity={p.severity} />
+                          <Score value={finding.score} severity={finding.severity} size="sm" />
+                          <SeverityBadge severity={finding.severity} />
                         </span>
                       </td>
                     </tr>

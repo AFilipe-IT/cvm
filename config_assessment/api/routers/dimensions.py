@@ -41,6 +41,49 @@ DIMENSION_DESCRIPTIONS: dict[str, str] = {
     "hardening": "Kernel parameters and platform-level hardening settings.",
 }
 
+# What a dimension WOULD report, had it been assessed.
+#
+# This exists so an unassessed axis can say something concrete instead of
+# rendering an empty panel. An empty panel reads as "nothing to report here",
+# which is the false-assurance failure the whole not_assessed distinction is
+# meant to prevent: the operator must be able to see what they are missing, not
+# merely that a number is absent.
+#
+# The entries describe checks the knowledge base already carries, so they are a
+# statement about coverage not yet exercised — not a roadmap.
+DIMENSION_WOULD_MEASURE: dict[str, list[str]] = {
+    "configuration": [
+        "Directives that deviate from the benchmark for each detected service.",
+        "Settings left at an insecure default because they were never stated.",
+        "Directives absent from the knowledge base, flagged rather than passed.",
+    ],
+    "permissions": [
+        "World-writable files and directories outside the expected set.",
+        "SUID and SGID binaries beyond the distribution baseline.",
+        "Ownership and mode of credential files such as private keys.",
+        "Sudo policy granting unrestricted or password-less escalation.",
+    ],
+    "exposure": [
+        "Every listening socket and the interface it is bound to.",
+        "Datastores reachable beyond loopback, whatever port they listen on.",
+        "The process owning each socket, so a service can be named not guessed.",
+    ],
+    "secrets": [
+        "Passwords and API tokens written literally into configuration.",
+        "Private keys stored alongside the configuration that references them.",
+        "Credentials left in environment files readable by other users.",
+    ],
+    "patch": [
+        "Installed package versions against known fixed versions.",
+        "CVEs applying to the running versions of the assessed services.",
+    ],
+    "hardening": [
+        "Kernel parameters governing network and memory protections.",
+        "Mandatory access control state (AppArmor or SELinux).",
+        "Boot and module-loading restrictions.",
+    ],
+}
+
 
 @router.get("/{dimension_id}")
 def get_dimension(dimension_id: str, host_id: int | None = None,
@@ -80,6 +123,15 @@ def get_dimension(dimension_id: str, host_id: int | None = None,
         "score": scored.score,
         "severity": scored.severity,
         "description": DIMENSION_DESCRIPTIONS.get(dimension_id, ""),
+        "would_measure": DIMENSION_WOULD_MEASURE.get(dimension_id, []),
+        # Taken from the scored result rather than recounted here, so this
+        # endpoint and /posture cannot drift on what "critical" means. They are
+        # null when unassessed for the same reason the score is: "0 findings"
+        # is a result, and nobody looked.
+        "weight": scored.weight,
+        "findings_count": scored.findings_count,
+        "critical_count": scored.critical_count,
+        "delta": scored.delta,
         "assessed_at": max((r.timestamp for r in results), default=None)
                        if assessed else None,
         "severity_breakdown": severity_breakdown(mine),

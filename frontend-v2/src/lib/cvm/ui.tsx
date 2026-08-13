@@ -91,7 +91,10 @@ export const TECH_ICONS: Record<
 
 export const fmtScore = (v: number | null) => (v === null ? "—" : v.toFixed(1));
 
-export const relativeTime = (iso: string, now = new Date("2026-08-12T14:40:00Z")) => {
+// `now` defaulted to a frozen date while the console ran on fixtures, so the
+// mock's timestamps always read as recent. Against live data that would report
+// every age relative to a date in the past — wrong, and increasingly so.
+export const relativeTime = (iso: string, now = new Date()) => {
   const diff = (now.getTime() - new Date(iso).getTime()) / 1000;
   if (diff < 60) return "just now";
   if (diff < 3600) return `${Math.round(diff / 60)}m ago`;

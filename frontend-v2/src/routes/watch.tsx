@@ -11,7 +11,8 @@ import {
   TechIcon,
   TimeStamp,
 } from "@/components/cvm/primitives";
-import { watchEvents, watchSessions } from "@/lib/cvm/data";
+import { useWatchEvents, useWatchSessions } from "@/lib/cvm/api";
+import { EmptyState, ErrorState, LoadingState } from "@/components/cvm/states";
 import { severityVar } from "@/lib/cvm/ui";
 
 export const Route = createFileRoute("/watch")({
@@ -45,6 +46,11 @@ const stateStyle = (s: "live" | "stale" | "paused") =>
       : { color: "var(--sev-none)", label: "Paused" };
 
 function WatchPage() {
+  const sessionsQuery = useWatchSessions();
+  const eventsQuery = useWatchEvents();
+  const sessions = sessionsQuery.data ?? [];
+  const events = eventsQuery.data ?? [];
+
   return (
     <AppShell
       title="Watch"
@@ -53,9 +59,26 @@ function WatchPage() {
       <div className="grid gap-4 xl:grid-cols-12">
         <div className="space-y-3 xl:col-span-7">
           <h2 className="text-sm font-semibold tracking-tight">
-            Sessions · {watchSessions.filter((s) => s.state === "live").length} live
+            Sessions · {sessions.filter((s) => s.state === "live").length} live
           </h2>
-          {watchSessions.map((s) => {
+          {sessionsQuery.isLoading ? (
+            <Panel>
+              <LoadingState label="Loading watch sessions…" />
+            </Panel>
+          ) : sessionsQuery.error ? (
+            <Panel>
+              <ErrorState error={sessionsQuery.error} />
+            </Panel>
+          ) : sessions.length === 0 ? (
+            <Panel>
+              <EmptyState
+                title="No watch sessions"
+                hint="Start one with `caspar watch <target>`. A session keeps re-assessing its target and records every change here."
+                icon={<Activity className="size-5" />}
+              />
+            </Panel>
+          ) : null}
+          {sessions.map((s) => {
             const st = stateStyle(s.state);
             return (
               <Panel key={s.id} className="flex flex-wrap items-center gap-4 px-5 py-4">
@@ -94,8 +117,19 @@ function WatchPage() {
 
         <Panel className="xl:col-span-5">
           <PanelHeader title="Event stream" hint="Configuration changes and their score impact" />
+          {eventsQuery.isLoading ? (
+            <LoadingState label="Loading events…" />
+          ) : eventsQuery.error ? (
+            <ErrorState error={eventsQuery.error} />
+          ) : events.length === 0 ? (
+            <EmptyState
+              title="No events recorded"
+              hint="Each re-assessment a watch session performs is recorded here with its effect on the score."
+              icon={<RefreshCcw className="size-5" />}
+            />
+          ) : null}
           <ul className="divide-y divide-border">
-            {watchEvents.map((e) => {
+            {events.map((e) => {
               const Icon = EVENT_ICON[e.kind];
               return (
                 <li key={e.id} className="flex items-start gap-3 px-5 py-3">
@@ -118,9 +152,11 @@ function WatchPage() {
               );
             })}
           </ul>
+          {/* The mock claimed events were archived after 24h. Nothing archives
+              them — every event is a stored assessment and stays queryable. */}
           <div className="flex items-center gap-2 border-t border-border px-5 py-3 text-[11px] text-muted-foreground">
-            <Activity className="size-3.5" /> Events older than 24h are archived with the
-            assessment they triggered.
+            <Activity className="size-3.5" /> Each event is a stored assessment; the change shown
+            is against the one before it.
           </div>
         </Panel>
       </div>

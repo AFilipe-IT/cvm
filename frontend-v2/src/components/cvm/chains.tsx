@@ -1,8 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowDown, ArrowRight, Layers, TrendingUp } from "lucide-react";
 import type { Chain } from "@/lib/cvm/types";
-import { DIMENSION_META, severityVar } from "@/lib/cvm/ui";
-import { findingById } from "@/lib/cvm/data";
+import { DIMENSION_META, severityForScore, severityVar } from "@/lib/cvm/ui";
 import { Panel, Score, SeverityBadge } from "./primitives";
 
 function StepNode({
@@ -14,7 +13,11 @@ function StepNode({
 }) {
   const meta = DIMENSION_META[step.dimension];
   const Icon = meta.icon;
-  const finding = findingById(step.finding_id);
+  // The step's severity band is derived from its own score rather than looked
+  // up on the referenced finding. The score is already on the step, the bands
+  // are a fixed function of it, and a lookup would make the colour depend on
+  // whether an unrelated query had loaded.
+  const severity = severityForScore(step.score);
   return (
     <div className="flex flex-1 items-stretch gap-3 lg:flex-col">
       <div className="flex flex-1 flex-col rounded-lg border border-border bg-panel-alt/60 p-3">
@@ -33,7 +36,7 @@ function StepNode({
           </span>
           <span
             className="ml-auto num text-sm font-semibold"
-            style={{ color: severityVar(finding?.severity ?? null) }}
+            style={{ color: severityVar(severity) }}
           >
             {step.score.toFixed(1)}
           </span>
@@ -41,9 +44,12 @@ function StepNode({
         <div className="mt-2 truncate font-mono text-xs font-medium" title={step.identifier}>
           {step.identifier}
         </div>
+        {/* The step used to append the finding's target label, resolved from
+            the mock. `ChainStep` does not carry it and the dimension plus the
+            identifier already name the step; fetching every step's finding to
+            add one word would be a query per node. */}
         <div className="mt-0.5 text-[11px]" style={{ color: meta.accent }}>
           {meta.short}
-          {finding ? ` · ${finding.target_label}` : ""}
         </div>
         <p className="mt-2 text-xs text-muted-foreground">{step.role}</p>
         <Link

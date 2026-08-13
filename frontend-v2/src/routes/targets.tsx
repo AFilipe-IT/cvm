@@ -2,8 +2,10 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell } from "@/components/cvm/AppShell";
 import { Panel, Score, SeverityBadge, Sparkline, TechIcon } from "@/components/cvm/primitives";
 import { ScoreScaleLegend } from "@/components/cvm/dimensions";
-import { targets } from "@/lib/cvm/data";
+import { useTargets } from "@/lib/cvm/api";
+import { EmptyState, ErrorState, LoadingState } from "@/components/cvm/states";
 import { severityVar } from "@/lib/cvm/ui";
+import { Crosshair } from "lucide-react";
 
 export const Route = createFileRoute("/targets")({
   head: () => ({
@@ -12,7 +14,7 @@ export const Route = createFileRoute("/targets")({
       {
         name: "description",
         content:
-          "Twelve assessed technologies with risk score, open findings and the benchmark each was measured against.",
+          "Assessed technologies with risk score, open findings and the benchmark each was measured against.",
       },
       { property: "og:title", content: "Assessed Targets — CVM" },
       { property: "og:description", content: "Per-technology configuration risk and benchmarks." },
@@ -22,9 +24,58 @@ export const Route = createFileRoute("/targets")({
 });
 
 function TargetsPage() {
-  const sorted = [...targets].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+  const { data: targets, isLoading, error } = useTargets();
+
+  if (isLoading) {
+    return (
+      <AppShell title="Targets">
+        <LoadingState label="Loading targets…" />
+      </AppShell>
+    );
+  }
+  if (error || !targets) {
+    return (
+      <AppShell title="Targets">
+        <ErrorState error={error} />
+      </AppShell>
+    );
+  }
+
+  // Never-assessed targets sort to the BOTTOM rather than to 0.0. Treating a
+  // missing score as zero would file them among the lowest-risk technologies,
+  // which is the same false-assurance mistake the dimension model exists to
+  // prevent — one rank down from the whole point of the page.
+  const sorted = [...targets].sort((a, b) => {
+    if (a.score === null && b.score === null) return a.label.localeCompare(b.label);
+    if (a.score === null) return 1;
+    if (b.score === null) return -1;
+    return b.score - a.score;
+  });
+  const assessed = targets.filter((t) => t.score !== null).length;
+
+  if (!targets.length) {
+    return (
+      <AppShell title="Targets">
+        <Panel>
+          <EmptyState
+            title="No targets registered"
+            hint="Targets appear here once a plugin is installed with `caspar plugin add`."
+            icon={<Crosshair className="size-5" />}
+          />
+        </Panel>
+      </AppShell>
+    );
+  }
+
   return (
-    <AppShell title="Targets" subtitle={`${targets.length} technologies assessed`}>
+    <AppShell
+      title="Targets"
+      subtitle={
+        assessed === targets.length
+          ? `${assessed} technolog${assessed === 1 ? "y" : "ies"} assessed`
+          : `${assessed} of ${targets.length} registered technologies assessed`
+      }
+    >
       <div className="mb-4">
         <ScoreScaleLegend />
       </div>
@@ -39,18 +90,21 @@ function TargetsPage() {
                   <div className="num text-[11px] text-muted-foreground">{t.version}</div>
                 </div>
               </div>
+              {/* "online/offline" would read as service health. This registry
+                  knows nothing about whether a service is up — only whether an
+                  assessment exists for it. */}
               <span
                 className={`inline-flex items-center gap-1.5 text-[11px] ${
-                  t.status === "online" ? "text-sev-low" : "text-muted-foreground"
+                  t.score !== null ? "text-sev-low" : "text-muted-foreground"
                 }`}
               >
                 <span
                   className="size-1.5 rounded-full"
                   style={{
-                    backgroundColor: t.status === "online" ? "var(--sev-low)" : "var(--sev-none)",
+                    backgroundColor: t.score !== null ? "var(--sev-low)" : "var(--sev-none)",
                   }}
                 />
-                {t.status}
+                {t.score !== null ? "assessed" : "never assessed"}
               </span>
             </div>
 
@@ -64,9 +118,17 @@ function TargetsPage() {
               <Sparkline data={t.sparkline} color={severityVar(t.severity)} />
             </div>
 
+            {/* "0 findings" on a target that was never assessed would claim a
+                clean result for something nobody looked at. */}
             <div className="mt-4 flex items-center gap-4 text-xs text-muted-foreground">
-              <span className="num">{t.findings_count} findings</span>
-              <span className="num">{t.critical_count} critical</span>
+              {t.score !== null ? (
+                <>
+                  <span className="num">{t.findings_count} findings</span>
+                  <span className="num">{t.critical_count} critical</span>
+                </>
+              ) : (
+                <span>No assessment has been run against this target.</span>
+              )}
             </div>
 
             <div className="mt-4 border-t border-border pt-3">

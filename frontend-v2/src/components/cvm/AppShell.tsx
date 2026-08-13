@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { posture } from "@/lib/cvm/data";
+import { usePosture } from "@/lib/cvm/api";
 import { absoluteTime, relativeTime } from "@/lib/cvm/ui";
 
 const NAV = [
@@ -49,8 +49,14 @@ function useTheme() {
   return { theme, toggle };
 }
 
+/** Short form of the knowledge-base hash — the full 64 chars do not fit. */
+function shortHash(hash: string | null | undefined): string {
+  return hash ? hash.slice(0, 12) : "unknown";
+}
+
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { data: posture } = usePosture();
   return (
     <div className="flex h-full flex-col border-r border-border bg-panel">
       <div className="flex items-center gap-2.5 border-b border-border px-5 py-4">
@@ -88,11 +94,15 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </nav>
       <div className="m-3 rounded-lg border border-border bg-panel-alt p-3">
         <div className="section-label">Knowledge base</div>
+        {/* Dashes rather than zeros while the posture loads: "0 rules" is a
+            claim about an empty knowledge base, not an absence of data. */}
         <div className="num mt-1.5 text-xl font-semibold">
-          {posture.totals.rules_evaluated} rules
+          {posture ? `${posture.totals.rules_evaluated} rules` : "—"}
         </div>
         <div className="mt-1 text-[11px] text-muted-foreground">
-          {posture.totals.targets_assessed} targets · sha256 {posture.manifest.db_sha256}
+          {posture
+            ? `${posture.totals.targets_assessed} targets · sha256 ${shortHash(posture.manifest.db_sha256)}`
+            : "Loading assessment data…"}
         </div>
         <Link
           to="/settings"
@@ -112,8 +122,10 @@ export function AppShell({
   children,
 }: {
   title: string;
-  subtitle?: string;
-  actions?: ReactNode;
+  // Explicitly `| undefined`: a subtitle that counts live data has no value
+  // until that data arrives, and the page renders before it does.
+  subtitle?: string | undefined;
+  actions?: ReactNode | undefined;
   children: ReactNode;
 }) {
   const { theme, toggle } = useTheme();
@@ -178,16 +190,47 @@ export function AppShell({
 }
 
 export function ProvenanceFooter() {
-  const p = posture;
+  const { data: p } = usePosture();
+
+  // The footer's claim is that every number above is reproducible from this
+  // provenance. Printing a partial or invented manifest would break exactly
+  // that claim, so with no data it reports that instead of filling in blanks.
+  if (!p) {
+    return (
+      <footer className="mt-3 border-t border-border bg-panel px-4 py-3 sm:px-5">
+        <p className="text-[11px] text-muted-foreground">
+          Provenance is shown once an assessment has been loaded.
+        </p>
+      </footer>
+    );
+  }
+
+  // `db_sha256` is null when the aggregated scans disagree — one predates a
+  // knowledge-base rebuild. That means the aggregate is NOT reproducible from
+  // a single state, which is worth saying plainly rather than hiding.
   const items = [
-    { k: "Last assessment", v: relativeTime(p.assessed_at), title: absoluteTime(p.assessed_at) },
-    { k: "Knowledge base", v: `sha256 ${p.manifest.db_sha256}` },
+    {
+      k: "Last assessment",
+      v: p.assessed_at ? relativeTime(p.assessed_at) : "never",
+      title: p.assessed_at ? absoluteTime(p.assessed_at) : undefined,
+    },
+    {
+      k: "Knowledge base",
+      v: p.manifest.db_sha256
+        ? `sha256 ${shortHash(p.manifest.db_sha256)}`
+        : "mixed across scans",
+      title: p.manifest.db_sha256 ??
+        "The aggregated scans used different knowledge bases.",
+    },
     {
       k: "Coverage",
       v: `${p.coverage.dimensions_assessed}/${p.coverage.dimensions_total} dimensions · ${p.coverage.percent}%`,
     },
-    { k: "Engine", v: `CVM ${p.manifest.cvm_version}` },
-    { k: "Scoring model", v: `v${p.scoring_model.version} · ${p.scoring_model.aggregation}` },
+    { k: "Engine", v: `CVM ${p.manifest.cvm_version ?? "unknown"}` },
+    {
+      k: "Scoring model",
+      v: `v${p.scoring_model.version} · ${p.scoring_model.aggregation}`,
+    },
     { k: "Missing dimensions", v: p.scoring_model.missing_dimension_policy },
   ];
   return (

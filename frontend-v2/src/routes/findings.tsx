@@ -1,12 +1,13 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Search, SlidersHorizontal } from "lucide-react";
 import { z } from "zod";
 import { AppShell } from "@/components/cvm/AppShell";
 import { FindingDetail, FindingRow } from "@/components/cvm/findings";
 import { EmptyState, Panel, PanelHeader } from "@/components/cvm/primitives";
-import { findings, posture, targets } from "@/lib/cvm/data";
-import type { Severity } from "@/lib/cvm/types";
+import { ErrorState, LoadingState } from "@/components/cvm/states";
+import { useFindings, usePosture, useTargets } from "@/lib/cvm/api";
+import type { DimensionId, Severity } from "@/lib/cvm/types";
 
 const searchSchema = z.object({
   q: z.string().optional(),
@@ -42,25 +43,34 @@ function FindingsPage() {
   const [inChain, setInChain] = useState(false);
   const [selected, setSelected] = useState<string | null>(search.q ?? null);
 
-  const filtered = useMemo(() => {
-    const q = text.trim().toLowerCase();
-    return findings
-      .filter((f) => (search.dimension ? f.dimension === search.dimension : true))
-      .filter((f) => (search.target ? f.target === search.target : true))
-      .filter((f) => (search.severity ? f.severity === search.severity : true))
-      .filter((f) => (hasCve ? f.cves.length > 0 : true))
-      .filter((f) => (inChain ? f.in_chains.length > 0 : true))
-      .filter((f) =>
-        q
-          ? [f.title, f.identifier, f.target_label, f.id, f.observed_value]
-              .join(" ")
-              .toLowerCase()
-              .includes(q)
-          : true,
-      )
-      .sort((a, b) => b.score - a.score);
-  }, [text, hasCve, inChain, search.dimension, search.target, search.severity]);
+  // Debounced so a query does not leave for every keystroke. Filtering runs
+  // on the server (the reference database holds 6323 findings, and shipping
+  // them all to filter here would make `total` meaningless under pagination),
+  // which makes each keystroke a network round trip rather than a local pass.
+  const [debounced, setDebounced] = useState(text);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(text), 250);
+    return () => clearTimeout(timer);
+  }, [text]);
 
+  const findingsQuery = useFindings({
+    dimension: (search.dimension as DimensionId | undefined) ?? null,
+    target: search.target ?? null,
+    severity: (search.severity as Severity | undefined) ?? null,
+    has_cve: hasCve ? true : null,
+    in_chain: inChain ? true : null,
+    q: debounced.trim() || null,
+    limit: 200,
+  });
+  const postureQuery = usePosture();
+  const targetsQuery = useTargets();
+
+  const posture = postureQuery.data;
+  const targets = targetsQuery.data ?? [];
+  const filtered = findingsQuery.data?.findings ?? [];
+  const total = findingsQuery.data?.total ?? 0;
+
+  // The API already returns findings sorted by score, highest first.
   const current = filtered.find((f) => f.id === selected) ?? filtered[0];
 
   const setParam = (key: "dimension" | "target" | "severity", value: string) =>
@@ -73,7 +83,16 @@ function FindingsPage() {
     "rounded-lg border border-border bg-panel px-2.5 py-2 text-xs text-foreground";
 
   return (
-    <AppShell title="Findings" subtitle={`${findings.length} open across 3 assessed dimensions`}>
+    <AppShell
+      title="Findings"
+      subtitle={
+        posture
+          ? `${posture.totals.findings_open} open across ` +
+            `${posture.coverage.dimensions_assessed} assessed dimension` +
+            `${posture.coverage.dimensions_assessed === 1 ? "" : "s"}`
+          : undefined
+      }
+    >
       <Panel className="mb-4 px-4 py-3">
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[220px] flex-1">
@@ -91,7 +110,7 @@ function FindingsPage() {
             onChange={(e) => setParam("dimension", e.target.value)}
           >
             <option value="">All dimensions</option>
-            {posture.dimensions
+            {(posture?.dimensions ?? [])
               .filter((d) => d.status === "assessed")
               .map((d) => (
                 <option key={d.id} value={d.id}>
@@ -136,8 +155,21 @@ function FindingsPage() {
 
       <div className="grid gap-4 xl:grid-cols-12">
         <Panel className="xl:col-span-7">
-          <PanelHeader title={`Results · ${filtered.length}`} hint="Sorted by risk, highest first" />
-          {filtered.length ? (
+          <PanelHeader
+            title={
+              // `total` counts everything matching the filters, not the page,
+              // so it is the honest number next to "Results".
+              total > filtered.length
+                ? `Results · ${filtered.length} of ${total}`
+                : `Results · ${total}`
+            }
+            hint="Sorted by risk, highest first"
+          />
+          {findingsQuery.isLoading ? (
+            <LoadingState label="Loading findings…" />
+          ) : findingsQuery.error ? (
+            <ErrorState error={findingsQuery.error} />
+          ) : filtered.length ? (
             <div className="scroll-x">
               <table className="w-full min-w-[680px] text-left">
                 <thead>

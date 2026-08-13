@@ -106,6 +106,13 @@ def _evidence(m) -> dict | None:
             "location": observed.get("location"),
             "process": observed.get("process"),
             "pid": observed.get("pid"),
+            # Passed through rather than re-derived by the consumer: deciding
+            # whether an address is reachable means unwrapping IPv4-mapped v6
+            # (::ffff:127.0.0.1 IS loopback despite `is_loopback` saying no) and
+            # treating the wildcard as world-facing. The collector already does
+            # that correctly; a second implementation in the console would be a
+            # second place for it to be wrong.
+            "world_facing": observed.get("world_facing"),
         }
 
     return {

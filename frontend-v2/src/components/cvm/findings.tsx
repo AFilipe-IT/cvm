@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { FileCode2, HardDrive, Network, Package, ShieldAlert, X } from "lucide-react";
 import type { Evidence, Finding } from "@/lib/cvm/types";
 import { DIMENSION_META, severityVar } from "@/lib/cvm/ui";
-import { chainById } from "@/lib/cvm/data";
+import { useChains } from "@/lib/cvm/api";
 import { DimensionChip, Score, SeverityBadge, TechIcon, TimeStamp } from "./primitives";
 
 export function EvidenceBlock({ evidence }: { evidence: Evidence }) {
@@ -57,9 +57,21 @@ export function EvidenceBlock({ evidence }: { evidence: Evidence }) {
         <div className="mt-2 font-mono text-xs">{evidence.location}</div>
         <div className="mt-2 grid grid-cols-3 gap-2">
           {[
-            ["process", evidence.process],
-            ["pid", String(evidence.pid)],
-            ["reachable", evidence.location.includes("0.0.0.0") ? "off-host" : "localhost"],
+            // Null when the owning process could not be read — /proc is not
+            // readable for another user's socket without root.
+            ["process", evidence.process ?? "unknown"],
+            ["pid", evidence.pid === null ? "—" : String(evidence.pid)],
+            // Taken from the collector's own classification. Substring-matching
+            // "0.0.0.0" got the wildcard right but called every concrete LAN
+            // address localhost — the exact inversion that matters here.
+            [
+              "reachable",
+              evidence.world_facing === null
+                ? "not classified"
+                : evidence.world_facing
+                  ? "off-host"
+                  : "localhost",
+            ],
           ].map(([k, v]) => (
             <div key={k} className="rounded-md border border-border bg-panel px-2.5 py-1.5">
               <div className="section-label">{k}</div>
@@ -97,18 +109,27 @@ export function FindingDetail({
   finding: Finding;
   onClose?: () => void;
 }) {
+  // One shared query, already cached by the chains page and the dashboard, so
+  // resolving a chain reference costs nothing extra. It only ever ENRICHES the
+  // link — the id below renders whether or not this resolves.
+  const { data: chains } = useChains();
+  const chainById = (id: string) => (chains ?? []).find((c) => c.id === id);
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3">
-          <TechIcon iconKey={finding.icon_key} size="lg" />
+          <TechIcon iconKey={finding.target} size="lg" />
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <DimensionChip id={finding.dimension} />
               <span className="font-mono text-[11px] text-muted-foreground">{finding.id}</span>
-              <TimeStamp iso={finding.detected_at} />
+              <TimeStamp iso={finding.first_seen} />
             </div>
-            <h3 className="mt-1.5 text-base font-semibold tracking-tight">{finding.title}</h3>
+            {/* Deterministic rules carry no LLM narrative, so the identifier
+                is the heading when there is no title to use. */}
+            <h3 className="mt-1.5 text-base font-semibold tracking-tight">
+              {finding.title ?? finding.identifier}
+            </h3>
             <div className="mt-1 font-mono text-xs text-muted-foreground">
               {finding.target_label} · {finding.identifier}
             </div>
@@ -144,19 +165,41 @@ export function FindingDetail({
         </div>
       </div>
 
+      {/* Impact and recommendation come from the LLM narrative, which
+          deterministic rules do not have. Saying the rule carries none is
+          honest; an empty paragraph would look like a rendering failure. */}
       <div>
         <div className="section-label">Impact</div>
-        <p className="mt-1 text-sm text-muted-foreground">{finding.impact}</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {finding.impact ?? "This rule carries no written impact analysis."}
+        </p>
       </div>
 
       <div>
         <div className="section-label">Recommendation</div>
-        <p className="mt-1 text-sm">{finding.recommendation}</p>
+        <p className="mt-1 text-sm">
+          {finding.recommendation ?? (
+            <span className="text-muted-foreground">
+              No remediation text is attached to this rule. The expected value above is the
+              target state.
+            </span>
+          )}
+        </p>
       </div>
 
       <div>
         <div className="section-label mb-1.5">Evidence</div>
-        <EvidenceBlock evidence={finding.evidence} />
+        {/* Null for a finding recovered from the knowledge base rather than
+            observed in a scan. Rendering an empty evidence block would imply
+            a file was read. */}
+        {finding.evidence ? (
+          <EvidenceBlock evidence={finding.evidence} />
+        ) : (
+          <p className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+            No observation is recorded for this finding — it was not tied to a scanned file or
+            socket.
+          </p>
+        )}
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -204,7 +247,7 @@ export function FindingDetail({
                       className="num ml-auto font-semibold"
                       style={{ color: severityVar(chain?.severity ?? null) }}
                     >
-                      {chain?.score.toFixed(1)}
+                      {chain ? chain.score.toFixed(1) : "—"}
                     </span>
                   </Link>
                 );
@@ -240,9 +283,9 @@ export function FindingRow({
     >
       <td className="px-4 py-2.5">
         <div className="flex items-center gap-2.5">
-          <TechIcon iconKey={finding.icon_key} size="sm" />
+          <TechIcon iconKey={finding.target} size="sm" />
           <div className="min-w-0">
-            <div className="truncate text-sm font-medium">{finding.title}</div>
+            <div className="truncate text-sm font-medium">{finding.title ?? finding.identifier}</div>
             <div className="truncate font-mono text-[11px] text-muted-foreground">
               {finding.target_label} · {finding.identifier}
             </div>

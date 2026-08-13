@@ -3,7 +3,8 @@ import { ArrowRight, CircleSlash } from "lucide-react";
 import { AppShell } from "@/components/cvm/AppShell";
 import { ScoreScaleLegend } from "@/components/cvm/dimensions";
 import { Delta, Panel, Score, SeverityBadge, Sparkline, TimeStamp } from "@/components/cvm/primitives";
-import { posture } from "@/lib/cvm/data";
+import { usePosture } from "@/lib/cvm/api";
+import { ErrorState, LoadingState } from "@/components/cvm/states";
 import { DIMENSION_META, severityVar } from "@/lib/cvm/ui";
 
 export const Route = createFileRoute("/dimensions/")({
@@ -26,6 +27,23 @@ export const Route = createFileRoute("/dimensions/")({
 });
 
 function DimensionsPage() {
+  const { data: posture, isLoading, error } = usePosture();
+
+  if (isLoading) {
+    return (
+      <AppShell title="Dimensions">
+        <LoadingState label="Loading dimensions…" />
+      </AppShell>
+    );
+  }
+  if (error || !posture) {
+    return (
+      <AppShell title="Dimensions">
+        <ErrorState error={error} />
+      </AppShell>
+    );
+  }
+
   const assessed = posture.dimensions.filter((d) => d.status !== "not_assessed");
   const missing = posture.dimensions.filter((d) => d.status === "not_assessed");
 

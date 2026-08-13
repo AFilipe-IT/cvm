@@ -4,7 +4,8 @@ import { Copy, Lock } from "lucide-react";
 import { AppShell } from "@/components/cvm/AppShell";
 import { Panel, PanelHeader } from "@/components/cvm/primitives";
 import { ScoreScaleLegend } from "@/components/cvm/dimensions";
-import { posture } from "@/lib/cvm/data";
+import { usePosture } from "@/lib/cvm/api";
+import { ErrorState, LoadingState } from "@/components/cvm/states";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -22,6 +23,10 @@ export const Route = createFileRoute("/settings")({
 });
 
 function SettingsPage() {
+  // Only the manifest panel needs the API. Theme and endpoint reference are
+  // client-side, and they are exactly what an operator wants to reach when the
+  // backend is the thing that is not answering.
+  const { data: posture, isLoading, error } = usePosture();
   const [theme, setTheme] = useState<"light" | "dark">("light");
   useEffect(() => {
     setTheme(document.documentElement.classList.contains("dark") ? "dark" : "light");
@@ -82,8 +87,13 @@ function SettingsPage() {
                 </div>
               ),
             )}
+            {/* The engine has no bearer-token scheme, which the mock claimed.
+                Auth is off unless CASPAR_API_KEY is set on the server, and it
+                is an X-API-Key header applied to write routes only. */}
             <p className="text-xs text-muted-foreground">
-              Requests are authenticated with a bearer token scoped to a single environment.
+              Read routes are open. If the server was started with{" "}
+              <code className="font-mono">CASPAR_API_KEY</code> set, write routes additionally
+              require an <code className="font-mono">X-API-Key</code> header.
             </p>
           </div>
         </Panel>
@@ -98,21 +108,32 @@ function SettingsPage() {
               </span>
             }
           />
-          <dl className="grid gap-px bg-border sm:grid-cols-2 lg:grid-cols-3">
-            {[
-              ["Engine version", `CVM ${posture.manifest.cvm_version}`],
-              ["Knowledge base sha256", posture.manifest.db_sha256],
-              ["Scoring model", `v${posture.scoring_model.version}`],
-              ["Aggregation", posture.scoring_model.aggregation],
-              ["Missing dimension policy", posture.scoring_model.missing_dimension_policy],
-              ["Rules", `${posture.totals.rules_evaluated} evaluated`],
-            ].map(([k, v]) => (
-              <div key={k} className="bg-panel px-5 py-3">
-                <dt className="section-label">{k}</dt>
-                <dd className="num mt-1 font-mono text-xs">{v}</dd>
-              </div>
-            ))}
-          </dl>
+          {isLoading ? (
+            <LoadingState label="Loading manifest…" />
+          ) : error || !posture ? (
+            <ErrorState error={error} />
+          ) : (
+            <dl className="grid gap-px bg-border sm:grid-cols-2 lg:grid-cols-3">
+              {[
+                ["Engine version", `CVM ${posture.manifest.cvm_version ?? "unknown"}`],
+                // Null when the aggregated scans were run against different
+                // knowledge bases — stated rather than shown as a blank cell.
+                [
+                  "Knowledge base sha256",
+                  posture.manifest.db_sha256 ?? "mixed across scans",
+                ],
+                ["Scoring model", `v${posture.scoring_model.version}`],
+                ["Aggregation", posture.scoring_model.aggregation],
+                ["Missing dimension policy", posture.scoring_model.missing_dimension_policy],
+                ["Rules", `${posture.totals.rules_evaluated} evaluated`],
+              ].map(([k, v]) => (
+                <div key={k} className="bg-panel px-5 py-3">
+                  <dt className="section-label">{k}</dt>
+                  <dd className="num mt-1 font-mono text-xs">{v}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
         </Panel>
       </div>
     </AppShell>

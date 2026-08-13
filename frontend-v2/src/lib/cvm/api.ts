@@ -39,7 +39,7 @@ export const queryKeys = {
   findings: (filters: FindingFilters) => ["findings", filters] as const,
   targets: ["targets"] as const,
   scans: ["scans"] as const,
-  chains: (scanId: string | undefined) => ["chains", scanId] as const,
+  chains: ["chains"] as const,
   watch: ["watch"] as const,
   trends: ["trends"] as const,
 };
@@ -199,20 +199,17 @@ export function useScans(limit = 20): UseQueryResult<ScanRow[]> {
 }
 
 /**
- * Attack chains from the most recent scan.
+ * Active attack chains across the latest assessment.
  *
- * Chains are stored per scan, and there is no cross-scan chain endpoint, so
- * the console asks for the latest scan's. With no scans at all this is an
- * empty list rather than an error — nothing has been assessed yet.
+ * Scoped the same way /posture is, so a chain listed here is one of the
+ * `chains.active_count` the posture page reports — not a separate count that
+ * happens to agree. With nothing assessed this is an empty list rather than an
+ * error: no scan means no chain, which is a result, not a failure.
  */
 export function useChains(): UseQueryResult<Chain[]> {
-  const scans = useScans(1);
-  const scanId = scans.data?.[0]?.id;
-
   return useQuery({
-    queryKey: queryKeys.chains(scanId),
-    queryFn: () => apiGet<Chain[]>(`/scans/${scanId}/chains`),
-    enabled: Boolean(scanId),
+    queryKey: queryKeys.chains,
+    queryFn: () => apiGet<Chain[]>("/chains"),
   });
 }
 
@@ -282,7 +279,30 @@ export function useWatchSessions(): UseQueryResult<WatchSession[]> {
     queryKey: queryKeys.watch,
     queryFn: async () => {
       const sessions = await apiGet<WatchSessionResponse[]>("/watch");
-      return sessions.map<WatchSession>((s) => ({
+
+      // The list endpoint carries only the latest score per session, so the
+      // series comes from each session's detail. A watch session's whole point
+      // is the score MOVING, and a card showing one number cannot show that.
+      const series = await Promise.all(
+        sessions.map(async (s) => {
+          try {
+            const detail = await apiGet<WatchDetailResponse>(
+              `/watch/${s.watch_session}`,
+            );
+            // Oldest-first, so the line reads left to right in time.
+            return detail.events
+              .slice()
+              .reverse()
+              .map((e) => e.global_temporal_score);
+          } catch {
+            // One unreadable session must not blank the whole list; the card
+            // still shows its score, just without the trend behind it.
+            return [];
+          }
+        }),
+      );
+
+      return sessions.map<WatchSession>((s, i) => ({
         id: s.watch_session,
         target: s.target_name ?? "",
         target_label: s.target_name ?? s.input_path ?? s.watch_session,
@@ -292,7 +312,7 @@ export function useWatchSessions(): UseQueryResult<WatchSession[]> {
         last_event_at: s.last_seen ?? s.timestamp ?? "",
         score: s.global_temporal_score,
         severity: (s.severity as Severity | null) ?? "None",
-        sparkline: [],
+        sparkline: series[i] ?? [],
       }));
     },
     // A watch session is by definition changing; the list is polled so the

@@ -199,7 +199,22 @@ export function DimensionChip({
   );
 }
 
-export function TimeStamp({ iso, className }: { iso: string; className?: string }) {
+export function TimeStamp({
+  iso,
+  className,
+}: {
+  iso: string | null | undefined;
+  className?: string;
+}) {
+  // Timestamps are genuinely absent in places — a finding stored before
+  // first_seen was recorded, a watch session that has not reported yet. Passing
+  // those through would render "Invalid Date", which looks like a bug rather
+  // than like a missing value.
+  if (!iso || Number.isNaN(new Date(iso).getTime())) {
+    return (
+      <span className={cn("text-xs text-muted-foreground", className)}>unknown</span>
+    );
+  }
   return (
     <time
       dateTime={iso}
@@ -222,6 +237,13 @@ export function Sparkline({
   width?: number;
   height?: number;
 }) {
+  // Fewer than two points is not a trend. One point would divide by zero for
+  // its x coordinate (NaN, which SVG drops silently); zero points would draw an
+  // empty polyline. Reserving the space keeps the row from reflowing once a
+  // second assessment gives the line something to say.
+  if (data.length < 2) {
+    return <svg width={width} height={height} aria-hidden="true" />;
+  }
   const min = Math.min(...data);
   const max = Math.max(...data);
   const span = max - min || 1;

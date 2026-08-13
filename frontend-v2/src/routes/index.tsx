@@ -24,14 +24,14 @@ import {
   TimeStamp,
 } from "@/components/cvm/primitives";
 import {
-  activity,
-  chains,
-  findings,
-  modelBoundary,
-  overallTrend,
-  posture,
-  targets,
-} from "@/lib/cvm/data";
+  useActivity,
+  useChains,
+  useFindings,
+  useOverallTrend,
+  usePosture,
+  useTargets,
+} from "@/lib/cvm/api";
+import { EmptyState, ErrorState, LoadingState } from "@/components/cvm/states";
 import { DIMENSION_META, KPI_ACCENTS, severityVar } from "@/lib/cvm/ui";
 import type { DimensionId, Severity } from "@/lib/cvm/types";
 
@@ -54,11 +54,13 @@ export const Route = createFileRoute("/")({
   component: Overview,
 });
 
-const severityCounts = (): { severity: Severity; count: number }[] => {
+const severityCounts = (
+  items: { severity: Severity }[],
+): { severity: Severity; count: number }[] => {
   const order: Severity[] = ["Critical", "High", "Medium", "Low"];
   return order.map((s) => ({
     severity: s,
-    count: findings.filter((f) => f.severity === s).length,
+    count: items.filter((f) => f.severity === s).length,
   }));
 };
 
@@ -73,14 +75,50 @@ const RADAR_ORDER: DimensionId[] = [
 ];
 
 function Overview() {
-  const p = posture;
+  const postureQuery = usePosture();
+  // The API sorts by score and applies the limit, so the console does not
+  // fetch thousands of findings to display eight.
+  const findingsQuery = useFindings({ limit: 200 });
+  const chainsQuery = useChains();
+  const targetsQuery = useTargets();
+  const trendQuery = useOverallTrend();
+  const activityQuery = useActivity();
+
+  const p = postureQuery.data;
+  const findings = findingsQuery.data?.findings ?? [];
+  const chains = chainsQuery.data ?? [];
+  const targets = targetsQuery.data ?? [];
+
+  // The whole page is a reading of one posture, so it waits for that rather
+  // than rendering panels that would each have to invent a placeholder score.
+  if (postureQuery.isLoading) {
+    return (
+      <AppShell title="Overview" subtitle="Infrastructure security posture">
+        <LoadingState label="Loading security posture…" />
+      </AppShell>
+    );
+  }
+  if (postureQuery.error || !p) {
+    return (
+      <AppShell title="Overview" subtitle="Infrastructure security posture">
+        <ErrorState error={postureQuery.error} />
+      </AppShell>
+    );
+  }
+
   const topFindings = [...findings].sort((a, b) => b.score - a.score).slice(0, 8);
   const topChains = [...chains].sort((a, b) => b.score - a.score).slice(0, 2);
   const topTargets = [...targets].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, 6);
 
   const radarData = RADAR_ORDER.map((id) => {
-    const d = p.dimensions.find((x) => x.id === id)!;
-    return { label: d.label, short: DIMENSION_META[id].short, score: d.score };
+    const d = p.dimensions.find((x) => x.id === id);
+    return {
+      label: d?.label ?? DIMENSION_META[id].short,
+      short: DIMENSION_META[id].short,
+      // A dimension absent from the response is not plotted at 0 — a broken
+      // axis says "not assessed", a zero says "assessed and clean".
+      score: d?.score ?? null,
+    };
   });
 
   return (
@@ -104,22 +142,35 @@ function Overview() {
             <div className="flex flex-col items-center px-3 py-2">
               <ScoreGauge score={p.overall.score} severity={p.overall.severity} size={200} />
               <Delta value={p.overall.delta} suffix="vs. previous" />
-              <Link
-                to="/findings"
-                search={{ q: p.overall.driver.finding_id }}
-                className="mt-2 flex w-full items-center gap-2 rounded-md border border-border bg-panel-alt/60 px-2.5 py-1.5 text-[11px] hover:bg-panel-alt"
-              >
-                <span className="section-label shrink-0">Driver</span>
-                <span className="truncate font-mono text-[11px]">{p.overall.driver.label}</span>
-                <ArrowRight className="ml-auto size-3 shrink-0 text-accent" />
-              </Link>
+              {/* `driver` is null when there are no findings at all — there is
+                  then nothing that "produced the number", and inventing a link
+                  would point at a finding that does not exist. */}
+              {p.overall.driver ? (
+                <Link
+                  to="/findings"
+                  search={{ q: p.overall.driver.finding_id }}
+                  className="mt-2 flex w-full items-center gap-2 rounded-md border border-border bg-panel-alt/60 px-2.5 py-1.5 text-[11px] hover:bg-panel-alt"
+                >
+                  <span className="section-label shrink-0">Driver</span>
+                  <span className="truncate font-mono text-[11px]">{p.overall.driver.label}</span>
+                  <ArrowRight className="ml-auto size-3 shrink-0 text-accent" />
+                </Link>
+              ) : null}
             </div>
           </Panel>
 
           <Panel className="">
             <PanelHeader title="Global risk over time" />
             <div className="px-2 py-2">
-              <ScoreOverTime data={overallTrend} boundary={modelBoundary} height={200} />
+              {/* No `boundary` prop: the mock marked where the scoring model
+                  changed, but nothing persists a per-scan model version, so
+                  that annotation would be a line drawn at a date on which
+                  nothing recorded happened. */}
+              {trendQuery.isLoading ? (
+                <LoadingState label="Loading trend…" />
+              ) : (
+                <ScoreOverTime data={trendQuery.data ?? []} height={200} />
+              )}
             </div>
           </Panel>
         </div>
@@ -160,7 +211,13 @@ function Overview() {
               value={p.chains.active_count}
               accent={KPI_ACCENTS.purple}
               icon={Waypoints}
-              footnote={<span className="num">max {p.chains.highest_score.toFixed(1)}</span>}
+              footnote={
+                <span className="num">
+                  {p.chains.highest_score === null
+                    ? "none active"
+                    : `max ${p.chains.highest_score.toFixed(1)}`}
+                </span>
+              }
             />
             <KpiCard
               label="CVEs"
@@ -211,10 +268,10 @@ function Overview() {
             <PanelHeader title="Severity distribution" />
             <div className="flex items-center gap-2 px-3 py-2">
               <div className="min-w-0 flex-1">
-                <SeverityDonut data={severityCounts()} height={172} />
+                <SeverityDonut data={severityCounts(findings)} height={172} />
               </div>
               <div className="w-28 space-y-1">
-                {severityCounts().map((s) => (
+                {severityCounts(findings).map((s) => (
                   <div key={s.severity} className="flex items-center gap-1.5 text-[11px]">
                     <span
                       className="size-1.5 rounded-full"
@@ -237,9 +294,21 @@ function Overview() {
               All {chains.length} chains
             </Link>
           </div>
-          {topChains.map((c) => (
-            <ChainCard key={c.id} chain={c} />
-          ))}
+          {chainsQuery.isLoading ? (
+            <Panel>
+              <LoadingState label="Loading attack chains…" />
+            </Panel>
+          ) : topChains.length === 0 ? (
+            <Panel>
+              <EmptyState
+                title="No active attack chains"
+                hint="Chains appear when findings combine into a viable path."
+                icon={<Waypoints className="size-5" />}
+              />
+            </Panel>
+          ) : (
+            topChains.map((c) => <ChainCard key={c.id} chain={c} />)
+          )}
         </div>
 
         <div className="space-y-3 xl:col-span-4">
@@ -253,6 +322,15 @@ function Overview() {
               }
             />
             <div className="divide-y divide-border">
+              {targetsQuery.isLoading ? (
+                <LoadingState label="Loading targets…" />
+              ) : topTargets.length === 0 ? (
+                <EmptyState
+                  title="No targets assessed"
+                  hint="Run an assessment to populate this list."
+                  icon={<Crosshair className="size-5" />}
+                />
+              ) : null}
               {topTargets.map((t) => (
                 <Link
                   key={t.id}
@@ -281,8 +359,13 @@ function Overview() {
 
           <Panel>
             <PanelHeader title="Recent activity" />
+            {activityQuery.isLoading ? (
+              <LoadingState label="Loading activity…" />
+            ) : (activityQuery.data ?? []).length === 0 ? (
+              <EmptyState title="No assessments recorded yet" />
+            ) : null}
             <ul className="divide-y divide-border">
-              {activity.map((a) => (
+              {(activityQuery.data ?? []).map((a) => (
                 <li key={a.id} className="flex items-start gap-2 px-3 py-1.5">
                   <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-accent" />
                   <div className="min-w-0">
@@ -312,9 +395,9 @@ function Overview() {
                   <tr key={f.id} className="border-b border-border last:border-0">
                     <td className="px-3 py-1.5">
                       <div className="flex items-center gap-2.5">
-                        <TechIcon iconKey={f.icon_key} size="sm" />
+                        <TechIcon iconKey={f.target} size="sm" />
                         <div className="min-w-0">
-                          <div className="truncate text-[13px] font-medium">{f.title}</div>
+                          <div className="truncate text-[13px] font-medium">{f.title ?? f.identifier}</div>
                           <div className="truncate font-mono text-[11px] text-muted-foreground">
                             {f.target_label} · {f.identifier}
                           </div>

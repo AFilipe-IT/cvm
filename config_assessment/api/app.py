@@ -12,8 +12,9 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from config_assessment.api.routers import (
-    builds, dimensions, findings, health, hosts, jobs, knowledge, maintenance,
-    manage, plugins, posture, reports, scans, targets, trends, watch,
+    builds, chains, dimensions, findings, health, hosts, jobs, knowledge,
+    maintenance, manage, plugins, posture, reports, scans, targets, trends,
+    watch,
 )
 
 
@@ -49,6 +50,7 @@ def create_app(db_path: str = "ccss.db") -> FastAPI:
     app.include_router(scans.router)
     app.include_router(posture.router)
     app.include_router(dimensions.router)
+    app.include_router(chains.router)
     app.include_router(findings.router)
     app.include_router(trends.router)
     app.include_router(hosts.router)

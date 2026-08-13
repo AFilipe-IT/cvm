@@ -291,14 +291,31 @@ aos pesos declarados num conjunto de perfis dimensionais variados. Não é uma
 amostra de sistemas reais e não sustenta nenhuma afirmação sobre a distribuição
 de scores no mundo real.
 
-#### Lacuna encontrada na Fase C, ainda por fechar
+#### Lacuna encontrada na Fase C — fechada (2026-08-14)
 
-O alvo `ubuntu2204` **não é alcançável pela CLI**. `caspar scan /` falha com
+O alvo `ubuntu2204` **não era alcançável pela CLI**. `caspar scan /` falhava com
 «Nenhum ficheiro de configuração reconhecido»: `core/input_resolver.py::resolve_directory`
-assume que qualquer directório é um directório de configuração e procura
+assumia que qualquer directório é um directório de configuração e procurava
 `nginx.conf`, `httpd.conf`, … sem nunca perguntar aos plugins se algum reclama
-a raiz. O motor está correcto — `runtime.scan(root, db)` funciona, e é assim que
-os testes e a frota sintética o invocam — a lacuna é só no resolvedor da CLI.
+a raiz. O motor estava correcto — `runtime.scan(root, db)` funcionava, e é assim
+que os testes e a frota sintética o invocam — a lacuna era só no resolvedor.
+
+**Correcção:** `resolve()` pergunta primeiro se algum plugin reclama a raiz
+(`detect()`, desempatado por `detection_confidence()`) e só recorre à procura de
+ficheiro se nenhum reclamar. A ordem importa: o inverso deixaria uma raiz Ubuntu
+que por acaso contivesse um `nginx.conf` ser resolvida como um directório nginx.
+
+O comportamento antigo fica intacto — nenhum plugin reclama um directório de
+serviço, e a excepção continua a ser lançada quando não há nada de avaliável,
+que é o que impede um directório por avaliar de ser reportado como limpo.
+
+Três testes em `tests/test_ubuntu2204_plugin.py::TestReachableFromTheCli` fixam
+as três vias (raiz reclamada, directório de serviço, directório sem nada de
+avaliável). Verificado que o primeiro falha sem a correcção.
+
+Efeito lateral corrigido: o banner do `scan` imprimia `Dir: <raiz>  []` porque
+assumia que todo o modo `directory` tem `entry_file`; passa a nomear o alvo
+quando a raiz foi reclamada.
 
 ## 6. A UI do Lovable — estado verificado
 

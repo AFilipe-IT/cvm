@@ -743,6 +743,49 @@ def resolve_docker(image_ref: str) -> ResolvedInput:
 
 
 # ------------------------------------------------------------------ #
+# Raízes de sistema de ficheiros                                       #
+# ------------------------------------------------------------------ #
+
+def _plugin_claiming_root(path: str):
+    """O plugin que reclama `path` como raiz de sistema, ou None.
+
+    PORQUE ISTO EXISTE. `resolve_directory` assume que qualquer directório é um
+    directório de configuração: procura nginx.conf, httpd.conf, … e falha se
+    não encontrar nenhum. Um alvo de sistema inteiro como o `ubuntu2204` recebe
+    uma RAIZ (`/`, ou uma imagem montada) onde não há nenhum desses ficheiros
+    no topo, pelo que `caspar scan /` falhava com «Nenhum ficheiro de
+    configuração reconhecido» — o motor sabia fazer o scan, a CLI é que nunca
+    lá chegava.
+
+    A pergunta certa é a que os plugins já sabem responder: `detect()`. Só se
+    nenhum reclamar a raiz é que se cai na procura por ficheiros de sempre, e
+    por isso este caminho não altera o comportamento de nenhum alvo existente.
+
+    Empate resolvido por `detection_confidence()`, o mesmo critério que
+    `assessment.select_plugin` usa — não faria sentido a CLI escolher por uma
+    regra e o motor por outra.
+    """
+    try:
+        from config_assessment.core import runtime
+    except ImportError:      # pragma: no cover - defensivo
+        return None
+
+    claims = []
+    for plugin in getattr(runtime, "_REGISTRY", []):
+        try:
+            if plugin.detect(path):
+                claims.append((plugin.detection_confidence(path), plugin))
+        except Exception as exc:
+            # Um plugin que rebenta a detectar não pode impedir os outros de
+            # serem consultados, nem derrubar o scan.
+            logger.debug("detect() falhou em %s: %s",
+                         type(plugin).__name__, exc)
+    if not claims:
+        return None
+    return max(claims, key=lambda c: c[0])[1]
+
+
+# ------------------------------------------------------------------ #
 # Router principal                                                     #
 # ------------------------------------------------------------------ #
 
@@ -775,6 +818,21 @@ def resolve(
         )
 
     if p.is_dir():
+        # Perguntar primeiro se algum plugin reclama esta raiz. Só se nenhum o
+        # fizer é que se procura um ficheiro de configuração conhecido, que é
+        # o comportamento de sempre para directórios de serviço.
+        claimant = _plugin_claiming_root(input_path)
+        if claimant is not None:
+            try:
+                target_name = claimant.metadata().name
+            except Exception:   # pragma: no cover - defensivo
+                target_name = type(claimant).__name__
+            logger.info("Raiz reclamada por %s: %s", target_name, p)
+            return ResolvedInput(
+                path=str(p.resolve()),
+                mode="directory",
+                metadata={"root_dir": str(p), "target": target_name},
+            )
         return resolve_directory(input_path)
 
     return resolve_file(input_path)

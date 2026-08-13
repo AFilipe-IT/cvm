@@ -79,6 +79,45 @@ class TestDetection:
         assert Ubuntu2204Plugin().detect(str(f)) is False
 
 
+class TestReachableFromTheCli:
+    """The plugin detecting a root is not enough — `resolve` has to route to it.
+
+    `resolve` used to send every directory straight to `resolve_directory`,
+    which looks for a known config FILE (nginx.conf, sshd_config, ...) and
+    raises when it finds none. An Ubuntu root contains no such entry point, so
+    the target was unreachable from the CLI however well `detect` worked: it
+    could only be driven through the Python API. These tests pin the routing,
+    not the detection, because that is the half that was missing.
+    """
+
+    def test_an_ubuntu_root_resolves_to_the_plugin(self, ubuntu_root):
+        from config_assessment.core.input_resolver import resolve
+
+        resolved = resolve(str(ubuntu_root))
+        assert resolved.mode == "directory"
+        assert resolved.metadata["target"] == "ubuntu2204"
+
+    def test_a_service_directory_still_uses_the_file_search(self, tmp_path):
+        """The fallback is what every existing directory scan depends on, so a
+        claiming plugin must not shadow it. No plugin claims this root, and the
+        nginx.conf inside it must still be found the way it always was."""
+        from config_assessment.core.input_resolver import resolve
+
+        (tmp_path / "nginx.conf").write_text("server_tokens off;\n")
+        resolved = resolve(str(tmp_path))
+        assert resolved.mode == "directory"
+        assert resolved.metadata["entry_file"] == "nginx.conf"
+
+    def test_an_unclaimed_directory_with_no_config_still_raises(self, tmp_path):
+        """The error is load-bearing: it tells the operator the path holds
+        nothing assessable. Silently resolving it would report a clean scan of
+        a directory that was never assessed."""
+        from config_assessment.core.input_resolver import resolve
+
+        with pytest.raises(FileNotFoundError):
+            resolve(str(tmp_path))
+
+
 class TestCollection:
     def test_it_produces_permissions_directives(self, ubuntu_root):
         names = {d.name for d in Ubuntu2204Plugin().parse_config(str(ubuntu_root))}

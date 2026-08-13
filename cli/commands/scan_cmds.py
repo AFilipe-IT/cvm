@@ -155,8 +155,14 @@ def scan(ctx, input_path, live, report, fmt, output, threshold,
         click.echo(click.style(f"  Image: {resolved.metadata.get('image', '')}", fg="cyan"))
         click.echo()
     elif resolved.mode == "directory":
+        # Um directório resolve por duas vias: um ficheiro de entrada conhecido
+        # (nginx.conf, ...) ou um plugin que reclama a raiz inteira. Só a
+        # primeira produz `entry_file`; imprimir sempre "[...]" mostrava "[]"
+        # vazio na segunda, sugerindo que nada foi encontrado quando na verdade
+        # o alvo é a raiz. Cada via anuncia o que de facto identificou.
+        detail = resolved.metadata.get("entry_file") or resolved.metadata.get("target", "")
         click.echo(click.style(
-            f"  Dir: {resolved.metadata.get('root_dir', '')}  [{resolved.metadata.get('entry_file', '')}]",
+            f"  Dir: {resolved.metadata.get('root_dir', '')}  [{detail}]",
             fg="cyan",
         ))
         click.echo()

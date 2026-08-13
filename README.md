@@ -47,15 +47,40 @@ dados fictícios.
 | Inventário de hosts | tabela existe e está vazia; por estender |
 | Scoring multidimensional | por implementar |
 | Dimensões de permissões e exposição | por implementar |
-| `plugin fetch` | **partido** — ver abaixo |
+| `plugin fetch` (Fase 0) | **feito** — ver abaixo |
 
-### Regressão conhecida
+### Fase 0 — fonte de benchmarks reposta
 
-O `plugin fetch` depende do `stigviewer.com`, que passou a exigir autenticação.
+O `plugin fetch` dependia do `stigviewer.com`, que passou a exigir autenticação.
 Verificado em 2026-08-13: **HTTP 401 em todos os alvos** — as 45 entradas de
-`config_assessment/fetch/catalog.json` estão inacessíveis. A Fase 0 do plano
-substitui esta fonte pelo SCAP Security Guide do ComplianceAsCode, que é público
-e traz o CIS Ubuntu 22.04 v2.0.0 completo.
+`config_assessment/fetch/catalog.json` ficaram inacessíveis.
+
+A fonte foi substituída pelo **SCAP Security Guide** (ComplianceAsCode/content),
+que é público, versionado e traz o CIS Ubuntu 22.04 v2.0.0 completo. Os alvos de
+sistema operativo passam a ter uma fonte `ssg` antes da `stigviewer`; as fontes
+`stigviewer` que restam explicam que fecharam, em vez de falharem genericamente.
+
+Ao contrário de um STIG em prosa, o `rule.yml` do SSG guarda o par
+(identificador, valor esperado) de forma estruturada, com override por produto:
+
+```yaml
+template:
+    name: file_permissions
+    vars:
+        filepath: /etc/shadow
+        filemode: '0000'
+        filemode@ubuntu2204: '0640'
+```
+
+Isso permite extrair **223 das 400 regras** do CIS Ubuntu 22.04 L1 Server sem
+recorrer ao LLM. A proveniência de cada regra fica registada no XCCDF emitido
+(`cvm:deterministic`), para que a validação possa separar o que foi derivado do
+que foi inferido — as regras inferidas entram no mesmo regime do `apache-httpd`
+e precisam do seu próprio MAE.
+
+```bash
+caspar plugin fetch ubuntu2204 -o ./benchmarks
+```
 
 ## Documentos de planeamento
 

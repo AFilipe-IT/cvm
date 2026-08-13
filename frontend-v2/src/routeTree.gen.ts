@@ -10,8 +10,12 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AssessmentRouteImport } from './routes/assessment'
+import { Route as BuildRouteImport } from './routes/build'
 import { Route as ChainsRouteImport } from './routes/chains'
 import { Route as FindingsRouteImport } from './routes/findings'
+import { Route as KnowledgeRouteImport } from './routes/knowledge'
+import { Route as PluginsRouteImport } from './routes/plugins'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TargetsRouteImport } from './routes/targets'
@@ -24,6 +28,16 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AssessmentRoute = AssessmentRouteImport.update({
+  id: '/assessment',
+  path: '/assessment',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BuildRoute = BuildRouteImport.update({
+  id: '/build',
+  path: '/build',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ChainsRoute = ChainsRouteImport.update({
   id: '/chains',
   path: '/chains',
@@ -32,6 +46,16 @@ const ChainsRoute = ChainsRouteImport.update({
 const FindingsRoute = FindingsRouteImport.update({
   id: '/findings',
   path: '/findings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KnowledgeRoute = KnowledgeRouteImport.update({
+  id: '/knowledge',
+  path: '/knowledge',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PluginsRoute = PluginsRouteImport.update({
+  id: '/plugins',
+  path: '/plugins',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReportsRoute = ReportsRouteImport.update({
@@ -67,8 +91,12 @@ const DimensionsDimensionIdRoute = DimensionsDimensionIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/assessment': typeof AssessmentRoute
+  '/build': typeof BuildRoute
   '/chains': typeof ChainsRoute
   '/findings': typeof FindingsRoute
+  '/knowledge': typeof KnowledgeRoute
+  '/plugins': typeof PluginsRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/targets': typeof TargetsRoute
@@ -78,8 +106,12 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/assessment': typeof AssessmentRoute
+  '/build': typeof BuildRoute
   '/chains': typeof ChainsRoute
   '/findings': typeof FindingsRoute
+  '/knowledge': typeof KnowledgeRoute
+  '/plugins': typeof PluginsRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/targets': typeof TargetsRoute
@@ -90,8 +122,12 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/assessment': typeof AssessmentRoute
+  '/build': typeof BuildRoute
   '/chains': typeof ChainsRoute
   '/findings': typeof FindingsRoute
+  '/knowledge': typeof KnowledgeRoute
+  '/plugins': typeof PluginsRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/targets': typeof TargetsRoute
@@ -103,8 +139,12 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/assessment'
+    | '/build'
     | '/chains'
     | '/findings'
+    | '/knowledge'
+    | '/plugins'
     | '/reports'
     | '/settings'
     | '/targets'
@@ -114,8 +154,12 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/assessment'
+    | '/build'
     | '/chains'
     | '/findings'
+    | '/knowledge'
+    | '/plugins'
     | '/reports'
     | '/settings'
     | '/targets'
@@ -125,8 +169,12 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/assessment'
+    | '/build'
     | '/chains'
     | '/findings'
+    | '/knowledge'
+    | '/plugins'
     | '/reports'
     | '/settings'
     | '/targets'
@@ -137,8 +185,12 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AssessmentRoute: typeof AssessmentRoute
+  BuildRoute: typeof BuildRoute
   ChainsRoute: typeof ChainsRoute
   FindingsRoute: typeof FindingsRoute
+  KnowledgeRoute: typeof KnowledgeRoute
+  PluginsRoute: typeof PluginsRoute
   ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
   TargetsRoute: typeof TargetsRoute
@@ -156,6 +208,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/assessment': {
+      id: '/assessment'
+      path: '/assessment'
+      fullPath: '/assessment'
+      preLoaderRoute: typeof AssessmentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/build': {
+      id: '/build'
+      path: '/build'
+      fullPath: '/build'
+      preLoaderRoute: typeof BuildRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/chains': {
       id: '/chains'
       path: '/chains'
@@ -168,6 +234,20 @@ declare module '@tanstack/react-router' {
       path: '/findings'
       fullPath: '/findings'
       preLoaderRoute: typeof FindingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/knowledge': {
+      id: '/knowledge'
+      path: '/knowledge'
+      fullPath: '/knowledge'
+      preLoaderRoute: typeof KnowledgeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/plugins': {
+      id: '/plugins'
+      path: '/plugins'
+      fullPath: '/plugins'
+      preLoaderRoute: typeof PluginsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reports': {
@@ -217,8 +297,12 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AssessmentRoute: AssessmentRoute,
+  BuildRoute: BuildRoute,
   ChainsRoute: ChainsRoute,
   FindingsRoute: FindingsRoute,
+  KnowledgeRoute: KnowledgeRoute,
+  PluginsRoute: PluginsRoute,
   ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
   TargetsRoute: TargetsRoute,

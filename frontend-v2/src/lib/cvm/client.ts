@@ -77,6 +77,132 @@ function messageFrom(payload: unknown, fallback: string): {
   return { message: fallback, code: null };
 }
 
+/** Turns a failed Response into the ApiError the console renders. */
+async function errorFrom(response: Response): Promise<ApiError> {
+  const payload = await response.json().catch(() => null);
+  const { message, code } = messageFrom(
+    payload,
+    `${response.status} ${response.statusText}`,
+  );
+  return new ApiError(message, response.status, code);
+}
+
+/** The ApiError for a request that never reached the server. */
+function unreachable(): ApiError {
+  return new ApiError(
+    "Could not reach the CVM API. Is `caspar serve` running?",
+    0,
+    "unreachable",
+  );
+}
+
+/**
+ * A write action.
+ *
+ * Long-running work (builds, plugin installs) answers 202 with a `job_id`
+ * rather than blocking, so this resolves as soon as the job is ACCEPTED — not
+ * when it finishes. Callers poll `useJob`. A 202 is a success here for exactly
+ * that reason: treating it as anything else would make every build look failed.
+ */
+export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...(API_KEY ? { "X-API-Key": API_KEY } : {}),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  } catch {
+    throw unreachable();
+  }
+
+  if (!response.ok) throw await errorFrom(response);
+  // 204 carries no body; parsing it would throw on valid success.
+  if (response.status === 204) return undefined as T;
+  return (await response.json()) as T;
+}
+
+/**
+ * A multipart upload.
+ *
+ * `Content-Type` is deliberately NOT set: the browser has to append the
+ * multipart boundary itself, and naming the type here would produce a header
+ * without one, which the server cannot parse.
+ */
+export async function apiPostForm<T>(path: string, form: FormData): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        ...(API_KEY ? { "X-API-Key": API_KEY } : {}),
+      },
+      body: form,
+    });
+  } catch {
+    throw unreachable();
+  }
+
+  if (!response.ok) throw await errorFrom(response);
+  return (await response.json()) as T;
+}
+
+/**
+ * A DELETE.
+ *
+ * Assessments accumulate — every scan is stored — so without this the database
+ * grows without bound and the console offers no way to prune it.
+ */
+export async function apiDelete<T>(path: string): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method: "DELETE",
+      headers: {
+        Accept: "application/json",
+        ...(API_KEY ? { "X-API-Key": API_KEY } : {}),
+      },
+    });
+  } catch {
+    throw unreachable();
+  }
+
+  if (!response.ok) throw await errorFrom(response);
+  if (response.status === 204) return undefined as T;
+  return (await response.json().catch(() => undefined)) as T;
+}
+
+/**
+ * A POST whose response is a file rather than JSON.
+ *
+ * Report generation streams bytes back, so it cannot go through `apiPost`.
+ * It still belongs here: an unreachable server and a 500 must look the same
+ * to the console whether the reply was going to be JSON or a PDF.
+ */
+export async function apiPostBlob(path: string, body?: unknown): Promise<Blob> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(API_KEY ? { "X-API-Key": API_KEY } : {}),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  } catch {
+    throw unreachable();
+  }
+
+  if (!response.ok) throw await errorFrom(response);
+  return await response.blob();
+}
+
 export async function apiGet<T>(
   path: string,
   params?: Record<string, string | number | boolean | null | undefined>,
@@ -102,21 +228,10 @@ export async function apiGet<T>(
     // fetch only rejects when the request never completed — the server is
     // down, or the browser is offline. Saying so is more useful than the
     // generic "Failed to fetch".
-    throw new ApiError(
-      "Could not reach the CVM API. Is `caspar serve` running?",
-      0,
-      "unreachable",
-    );
+    throw unreachable();
   }
 
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null);
-    const { message, code } = messageFrom(
-      payload,
-      `${response.status} ${response.statusText}`,
-    );
-    throw new ApiError(message, response.status, code);
-  }
+  if (!response.ok) throw await errorFrom(response);
 
   return (await response.json()) as T;
 }

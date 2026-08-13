@@ -1,4 +1,21 @@
 export type Severity = "None" | "Low" | "Medium" | "High" | "Critical";
+
+/**
+ * Score → severity label.
+ *
+ * MUST STAY IDENTICAL to `core/engines/scoring.py::severity_label` (CVSS v3 /
+ * NVD bands). Most endpoints send `severity` alongside the score and the
+ * console should use what the server said; this exists for the knowledge base,
+ * where a rule carries `temporal_score` and no label. Diverging here would show
+ * the same rule as two different severities on two pages.
+ */
+export function severityFor(score: number): Severity {
+  if (score === 0) return "None";
+  if (score < 4) return "Low";
+  if (score < 7) return "Medium";
+  if (score < 9) return "High";
+  return "Critical";
+}
 export type DimensionId =
   | "configuration"
   | "permissions"

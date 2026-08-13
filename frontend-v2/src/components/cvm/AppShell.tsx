@@ -1,13 +1,17 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Activity,
+  BookOpen,
   Crosshair,
   FileText,
   Gauge,
+  Hammer,
   Layers,
   ListChecks,
   Menu,
   Moon,
+  PlayCircle,
+  Puzzle,
   Settings as SettingsIcon,
   ShieldCheck,
   Sun,
@@ -19,15 +23,42 @@ import { cn } from "@/lib/utils";
 import { usePosture } from "@/lib/cvm/api";
 import { absoluteTime, relativeTime } from "@/lib/cvm/ui";
 
-const NAV = [
-  { to: "/", label: "Overview", icon: Gauge },
-  { to: "/dimensions", label: "Dimensions", icon: Layers },
-  { to: "/findings", label: "Findings", icon: ListChecks },
-  { to: "/chains", label: "Attack Chains", icon: Waypoints },
-  { to: "/targets", label: "Targets", icon: Crosshair },
-  { to: "/watch", label: "Watch", icon: Activity },
-  { to: "/reports", label: "Reports", icon: FileText },
-  { to: "/settings", label: "Settings", icon: SettingsIcon },
+/**
+ * Navigation, grouped by what a page does rather than as one flat list.
+ *
+ * The split is load-bearing, not decorative: everything under "Assess" changes
+ * server state — runs a scan, starts an LLM build, installs a plugin — while
+ * everything under "Posture" only reads. Twelve undifferentiated links would
+ * put "Start build" one careless click away from "Overview".
+ */
+const NAV_GROUPS = [
+  {
+    label: "Posture",
+    items: [
+      { to: "/", label: "Overview", icon: Gauge },
+      { to: "/dimensions", label: "Dimensions", icon: Layers },
+      { to: "/findings", label: "Findings", icon: ListChecks },
+      { to: "/chains", label: "Attack Chains", icon: Waypoints },
+      { to: "/targets", label: "Targets", icon: Crosshair },
+      { to: "/watch", label: "Watch", icon: Activity },
+    ],
+  },
+  {
+    label: "Assess",
+    items: [
+      { to: "/assessment", label: "Assessment", icon: PlayCircle },
+      { to: "/knowledge", label: "Knowledge Base", icon: BookOpen },
+      { to: "/plugins", label: "Plugins", icon: Puzzle },
+      { to: "/build", label: "Build", icon: Hammer },
+    ],
+  },
+  {
+    label: "Output",
+    items: [
+      { to: "/reports", label: "Reports", icon: FileText },
+      { to: "/settings", label: "Settings", icon: SettingsIcon },
+    ],
+  },
 ] as const;
 
 function useTheme() {
@@ -70,27 +101,34 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           </div>
         </div>
       </div>
-      <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
-        {NAV.map((item) => {
-          const active =
-            item.to === "/" ? pathname === "/" : pathname.startsWith(item.to);
-          return (
-            <Link
-              key={item.to}
-              to={item.to}
-              onClick={onNavigate}
-              className={cn(
-                "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
-                active
-                  ? "bg-accent/12 font-medium text-accent"
-                  : "text-muted-foreground hover:bg-panel-alt hover:text-foreground",
-              )}
-            >
-              <item.icon className="size-4" />
-              {item.label}
-            </Link>
-          );
-        })}
+      <nav className="flex-1 overflow-y-auto p-3">
+        {NAV_GROUPS.map((group) => (
+          <div key={group.label} className="mb-3 last:mb-0">
+            <div className="section-label px-3 pb-1.5">{group.label}</div>
+            <div className="space-y-0.5">
+              {group.items.map((item) => {
+                const active =
+                  item.to === "/" ? pathname === "/" : pathname.startsWith(item.to);
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    onClick={onNavigate}
+                    className={cn(
+                      "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
+                      active
+                        ? "bg-accent/12 font-medium text-accent"
+                        : "text-muted-foreground hover:bg-panel-alt hover:text-foreground",
+                    )}
+                  >
+                    <item.icon className="size-4" />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
       <div className="m-3 rounded-lg border border-border bg-panel-alt p-3">
         <div className="section-label">Knowledge base</div>

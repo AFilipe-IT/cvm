@@ -183,3 +183,24 @@
   overflow-x: auto;
   scrollbar-width: thin;
 }
+
+/* The progress indicator for a running job.
+   Deliberately indeterminate: a build cannot report a real completion
+   fraction, and an invented percentage on a job that runs for over an hour
+   would invite the operator to plan around a number that means nothing. */
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .job-progress {
+    animation: none !important;
+    width: 100%;
+    opacity: 0.55;
+  }
+}

@@ -37,10 +37,17 @@ def serve(ctx: click.Context, host: str, port: int, reload: bool) -> None:
     try:
         import uvicorn
     except ModuleNotFoundError as exc:
+        # Two install commands because the right one depends on how CASPAR got
+        # here: `-e .` only works in a source checkout, and printing it alone
+        # sent anyone who installed from PyPI to a command that fails in their
+        # home directory with a confusing hatchling error.
         click.echo(
             click.style(f"O 'caspar serve' precisa do extra [api] (falta: {exc.name}).\n",
                         fg="yellow") +
-            "Instale com: " + click.style('pip install -e ".[api]"', bold=True) + "\n"
+            "Instale com: " + click.style('pip install "cvm-caspar[api]"', bold=True) +
+            "   (a partir do PyPI)\n"
+            "        ou:  " + click.style('pip install -e ".[api]"', bold=True) +
+            "        (num clone do repositório)\n"
             "A CLI (scan, build, plugin, report) funciona sem ele.",
             err=True,
         )
@@ -50,7 +57,8 @@ def serve(ctx: click.Context, host: str, port: int, reload: bool) -> None:
     if not Path(db_path).exists():
         click.echo(
             click.style(f"DB '{db_path}' not found.\n", fg="yellow") +
-            "Run: " + click.style("caspar build --benchmark <pdf>", bold=True),
+            "Run: " + click.style("caspar init", bold=True) +
+            "   (restores the built-in knowledge base)",
             err=True,
         )
         sys.exit(2)

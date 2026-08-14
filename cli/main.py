@@ -24,6 +24,7 @@ registration, and logging setup. The implementation lives in:
   cli/commands/build_cmds.py   build, fetch-exploits, refresh
   cli/commands/report_cmds.py  targets, diff, badge, explain, history, report
   cli/commands/manage_cmds.py  suppress, doctor, fix, promote
+  cli/commands/init_cmds.py    init (restore the DB from the built-in dump)
 
 Historical names are re-exported below, so `from cli.main import X` and
 `import cli.main as m; m.X` keep working.
@@ -70,6 +71,7 @@ from cli.commands.manage_cmds import suppress, doctor, fix, promote   # noqa: E4
 from cli.commands.chain_cmds import chain_group                        # noqa: E402,F401
 from cli.commands.serve_cmds import serve                              # noqa: E402,F401
 from cli.commands.demo_cmds import demo                                # noqa: E402,F401
+from cli.commands.init_cmds import init                                # noqa: E402,F401
 
 
 # ── CLI ────────────────────────────────────────────────────────────
@@ -107,6 +109,7 @@ for _cmd in (
     chain_group,                                   # hand-written attack chains
     serve,                                          # REST API + CVM Console
     demo,                                           # example configurations
+    init,                                           # create the DB (pip installs)
     about,                                          # wordmark + what CVM is
 ):
     cli.add_command(_cmd)

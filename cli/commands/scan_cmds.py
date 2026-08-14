@@ -119,7 +119,14 @@ def scan(ctx, input_path, live, report, fmt, output, threshold,
     if not Path(db_path).exists():
         click.echo(
             click.style(f"DB '{db_path}' not found.\n", fg="yellow") +
-            "Run: " + click.style("caspar build --benchmark <pdf>", bold=True),
+            # `build --benchmark` used to be the only advice here, which sent
+            # people to an LLM extraction of an hour or more to reproduce a
+            # knowledge base that ships with every installation. `init` restores
+            # that one in a second; building is for adding a target it lacks.
+            "Run: " + click.style("caspar init", bold=True) +
+            "   (restore the built-in knowledge base)\n"
+            "  or " + click.style("caspar build --benchmark <pdf>", bold=True) +
+            "   (extract a new target from a benchmark)",
             err=True,
         )
         sys.exit(2)

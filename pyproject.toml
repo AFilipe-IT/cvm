@@ -3,9 +3,35 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "caspar"
+# `caspar` alone is taken on PyPI by an empty placeholder (v0.0.0, uploaded
+# 2025-12-12), so the distribution is `cvm-caspar`: the methodology first, the
+# reference implementation second. The installed command stays `caspar` — the
+# usual arrangement when a distribution name and its entry point differ
+# (`pip install ansible-core` gives you `ansible`).
+name = "cvm-caspar"
 version = "1.0.0"
-description = "CASPAR — Configuration Vulnerability Meter (CVM) reference implementation, CCSS-based (NISTIR 7502)"
+description = "CVM — Configuration Vulnerability Meter: quantitative, reproducible security configuration scoring (CCSS / NISTIR 7502). CASPAR is the reference implementation."
+readme = "README_PYPI.md"
+# No `license` field on purpose: the repository carries no LICENSE file yet, and
+# declaring one here would be a claim the repository does not back. Add both
+# together (the file and this field) when the licence is chosen — without it,
+# PyPI shows the package as unlicensed, which legally means "all rights
+# reserved" and stops others from using it.
+keywords =["security", "configuration", "hardening", "ccss", "cis-benchmark",
+            "stig", "vulnerability", "compliance", "devsecops"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "Intended Audience :: Information Technology",
+    "Topic :: Security",
+    "Topic :: System :: Systems Administration",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: POSIX :: Linux",
+]
 requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2.0",
@@ -38,6 +64,11 @@ api = [
     "python-multipart>=0.0.9",  # UploadFile/Form support (POST /scans/upload)
 ]
 
+[project.urls]
+Homepage = "https://github.com/AFilipe-IT/cvm"
+Repository = "https://github.com/AFilipe-IT/cvm"
+Issues = "https://github.com/AFilipe-IT/cvm/issues"
+
 [project.scripts]
 caspar = "cli.main:cli"
 
@@ -48,3 +79,36 @@ addopts = "-v --tb=short"
 
 [tool.hatch.build.targets.wheel]
 packages = ["config_assessment", "cli"]
+
+# The built consoles live outside both Python packages, so they are not picked
+# up by `packages` and have to be placed explicitly. Without them a
+# `pip install` gets a `caspar serve` that hosts the REST API with no console at
+# all — and, having no repository, no way to obtain one.
+#
+# The paths on the right mirror the source tree because that is where
+# _mount_frontend (cli/commands/serve_cmds.py) looks: it resolves
+# <package-root>/frontend-v2/dist and <package-root>/frontend/dist, which is the
+# repository root in a source checkout and site-packages in an installed wheel.
+#
+# ~2 MB of the ~2.8 MB wheel. The alternative is a console that exists only for
+# people who clone the repository, which is the audience least in need of it.
+[tool.hatch.build.targets.wheel.force-include]
+"frontend-v2/dist" = "frontend-v2/dist"
+"frontend/dist" = "frontend/dist"
+
+# The sdist is the reproducibility artefact: it must carry the sources the wheel
+# is built from (both consoles' src/, the canonical SQL) so the build can be
+# repeated, not just the outputs.
+[tool.hatch.build.targets.sdist]
+include = [
+    "cli/", "config_assessment/", "tests/",
+    "frontend/", "frontend-v2/",
+    "data/ccss_canonical.sql",
+    "docs/", "*.md", "pyproject.toml",
+    "install-native.sh", "docker/",
+]
+exclude = [
+    "**/node_modules/",
+    "**/*.pdf",          # benchmark PDFs are build-time only; 78 MB for one
+    "**/__pycache__/",
+]

@@ -3,7 +3,14 @@ import { resolve } from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
-import { defineConfig } from "vite";
+// From vitest/config, not vite: vite's own defineConfig does not know the
+// `test` key, and a /// <reference types="vitest" /> no longer widens it.
+//
+// Vitest must stay on 4.x. Vitest 3 declares vite ^5/^6/^7 and so installs its
+// own nested copy alongside this project's vite 8 — two Vite type identities in
+// one config, which fails to typecheck under exactOptionalPropertyTypes with an
+// unreadable rollup-vs-rolldown mismatch. 4.x peers on vite 8 and uses this one.
+import { defineConfig } from "vitest/config";
 
 /**
  * Static SPA build.
@@ -26,7 +33,9 @@ export default defineConfig({
     tailwindcss(),
   ],
   resolve: {
-    alias: { "@": resolve(__dirname, "./src") },
+    // import.meta.dirname, not __dirname: Vite's native config loader (soon
+    // the default) does not provide the CJS global and warns on every run.
+    alias: { "@": resolve(import.meta.dirname, "./src") },
   },
   build: {
     // `caspar serve` mounts `dist/`; the SPA fallback there serves index.html
@@ -44,5 +53,13 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+  },
+  test: {
+    environment: "jsdom",
+    globals: true,
+    setupFiles: "./src/test/setup.ts",
+    // dist/ holds the built bundle; without this a stale build's JS gets
+    // collected as if it were source.
+    exclude: ["node_modules/**", "dist/**"],
   },
 });

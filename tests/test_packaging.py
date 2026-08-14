@@ -69,6 +69,58 @@ class TestForcedIncludes:
                 f"serve looks in {rel}, which the wheel does not ship")
 
 
+class TestLicence:
+    """Apache-2.0, declared the way current PyPI expects it.
+
+    Without a licence PyPI shows the package as unlicensed, which legally means
+    all rights reserved — the metadata is what actually grants anyone the right
+    to use this, so it is worth asserting rather than assuming.
+    """
+
+    def _project(self) -> dict:
+        data = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
+        return data["project"]
+
+    def test_the_licence_files_exist_and_are_declared(self):
+        proj = self._project()
+        assert proj["license"] == "Apache-2.0"
+        # NOTICE is not optional decoration: Apache-2.0 §4(d) requires it to
+        # travel with the work, and it carries the CIS/DISA/NIST provenance.
+        assert proj["license-files"] == ["LICENSE", "NOTICE"]
+        for name in proj["license-files"]:
+            assert (REPO / name).is_file(), f"{name} is declared but missing"
+
+    def test_the_licence_text_is_the_unmodified_apache_2_0(self):
+        """Byte-identical to the text at apache.org/licenses/LICENSE-2.0.txt.
+
+        A licence edited by accident (a stray reformat, a find-and-replace over
+        the tree) is no longer the licence it names, and nothing else in the
+        repository would notice.
+        """
+        import hashlib
+
+        digest = hashlib.sha256(
+            (REPO / "LICENSE").read_bytes()).hexdigest()
+        assert digest == (
+            "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        ), "LICENSE is not the canonical Apache 2.0 text"
+
+    def test_no_legacy_license_classifier(self):
+        """PEP 639 deprecates `License ::` classifiers alongside a license
+        expression, and PyPI rejects an upload that carries both."""
+        bad = [c for c in self._project()["classifiers"]
+               if c.startswith("License ::")]
+        assert not bad, f"remove the deprecated classifier(s): {bad}"
+
+    def test_the_sdist_ships_them(self):
+        data = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
+        include = data["tool"]["hatch"]["build"]["targets"]["sdist"]["include"]
+        for name in ("LICENSE", "NOTICE"):
+            assert name in include, (
+                f"{name} is missing from the sdist include list — the wheel "
+                f"carries it via license-files, the sdist does not.")
+
+
 class TestDockerfileSatisfiesThem:
     """The image is the one install path where the dists are absent by design."""
 

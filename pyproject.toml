@@ -12,11 +12,15 @@ name = "cvm-caspar"
 version = "1.0.0"
 description = "CVM — Configuration Vulnerability Meter: quantitative, reproducible security configuration scoring (CCSS / NISTIR 7502). CASPAR is the reference implementation."
 readme = "README_PYPI.md"
-# No `license` field on purpose: the repository carries no LICENSE file yet, and
-# declaring one here would be a claim the repository does not back. Add both
-# together (the file and this field) when the licence is chosen — without it,
-# PyPI shows the package as unlicensed, which legally means "all rights
-# reserved" and stops others from using it.
+# Apache-2.0 rather than MIT for the patent grant, and because it is what the
+# tools this work is measured against use (Trivy, OpenSCAP). An SPDX expression
+# and license-files, per PEP 639 — not the legacy `{ file = ... }` table, and no
+# "License ::" classifier, which PEP 639 deprecates and current PyPI rejects
+# alongside this field. NOTICE travels too: Apache-2.0 §4(d) requires it to be
+# passed on with the work, and it is where the CIS/DISA/NIST provenance is
+# stated.
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 keywords =["security", "configuration", "hardening", "ccss", "cis-benchmark",
             "stig", "vulnerability", "compliance", "devsecops"]
 classifiers = [
@@ -111,6 +115,7 @@ include = [
     # two stray directory READMEs. They are working notes, not something to
     # publish to PyPI under this project's name.
     "README.md", "README_PYPI.md", "INSTALL.md",
+    "LICENSE", "NOTICE",
 ]
 exclude = [
     "**/node_modules/",

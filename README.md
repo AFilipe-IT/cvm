@@ -173,7 +173,15 @@ normal produz sempre o prefixo certo.
 
 ## Licença e proveniência
 
-Herda a licença do CASPAR. A base de conhecimento deriva de CIS Benchmarks e
-DISA STIGs públicos, com proveniência declarada por alvo. A v2 acrescenta o SCAP
-Security Guide (ComplianceAsCode/content) como fonte, fixado por versão e com o
-SHA registado no manifesto de reprodutibilidade.
+**Apache 2.0** — ver [LICENSE](LICENSE). O [NOTICE](NOTICE) declara a
+proveniência de tudo o que não é código próprio e viaja com as distribuições,
+como o §4(d) da licença exige.
+
+O método de scoring implementa o CCSS (NISTIR 7502, NIST — publicação do governo
+dos EUA, sem copyright). A base de conhecimento **deriva** de CIS Benchmarks e
+DISA STIGs públicos, com proveniência declarada por alvo: o que é distribuído
+são regras extraídas com métricas, justificações e remediações próprias, não os
+documentos de origem — esses nunca viajam no repositório, nas distribuições nem
+nas imagens, e quem constrói um alvo novo fornece o seu. A v2 acrescenta o SCAP
+Security Guide (ComplianceAsCode/content, BSD-3-Clause, © Red Hat) como fonte,
+fixado por versão e com o SHA registado no manifesto de reprodutibilidade.

@@ -80,12 +80,18 @@ Single instance, self-hosted. No multi-tenancy, no user accounts, no hosted
 service. CVM runs where the systems it assesses are, which is also why it needs
 no agents and no third-party SSH credentials.
 
-## Provenance
+## Licence and provenance
 
-The knowledge base derives from public CIS Benchmarks and DISA STIGs, with
-provenance declared per target, plus the SCAP Security Guide
-(ComplianceAsCode/content) pinned by version with its SHA recorded in the
-reproducibility manifest.
+Apache 2.0. The scoring method implements CCSS (NISTIR 7502, NIST — a US
+Government publication, not subject to copyright).
+
+The knowledge base **derives** from public CIS Benchmarks and DISA STIGs, with
+provenance declared per target: what ships is machine-extracted rules carrying
+their own metrics, justifications and remediations — the benchmark documents
+themselves are never redistributed, and building a new target means supplying
+your own copy. The SCAP Security Guide (ComplianceAsCode/content, BSD-3-Clause,
+© Red Hat) is pinned by version with its SHA recorded in the reproducibility
+manifest. Full detail in the NOTICE file shipped with the package.
 
 Source, documentation and the Docker images:
 **https://github.com/AFilipe-IT/cvm**

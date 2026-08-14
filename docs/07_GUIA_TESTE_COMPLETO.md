@@ -510,23 +510,23 @@ instaladas. Só num `pip install -e .` feito à mão é que precisas do extra:
 Noutra sessão:
 
 ```bash
-curl -s localhost:8000/api/v1/health | python3 -m json.tool
-curl -s localhost:8000/api/v1/targets | python3 -m json.tool
-curl -s -X POST localhost:8000/api/v1/scans \
+curl -s localhost:2027/api/v1/health | python3 -m json.tool
+curl -s localhost:2027/api/v1/targets | python3 -m json.tool
+curl -s -X POST localhost:2027/api/v1/scans \
      -H 'Content-Type: application/json' \
      -d '{"input_path": "'$PWD'/caspar-demo/apache-vulnerable.conf"}' \
      | python3 -m json.tool | head -30
 ```
 
-A especificação completa está em `http://localhost:8000/docs` — 44 operações
+A especificação completa está em `http://localhost:2027/docs` — 44 operações
 sobre 38 caminhos.
 
 **Autenticação**, activa só quando a variável está definida:
 
 ```bash
 CASPAR_API_KEY=segredo caspar serve
-curl -s localhost:8000/api/v1/scans                       # 401
-curl -s -H 'X-API-Key: segredo' localhost:8000/api/v1/scans   # 200
+curl -s localhost:2027/api/v1/scans                       # 401
+curl -s -H 'X-API-Key: segredo' localhost:2027/api/v1/scans   # 200
 ```
 
 **Verificação que interessa à tese** — o CLI e a API têm de produzir o mesmo
@@ -543,29 +543,31 @@ caspar scan caspar-demo/apache-vulnerable.conf --report -f json -o via-cli
 
 ### 6.1 Arrancar a consola
 
-**Não há nada a instalar nem a construir.** A consola vem pronta nas duas formas
-de instalação, e nenhuma delas precisa de Node na tua máquina:
+**Não há nada a instalar nem a construir.** As duas consolas vêm prontas nas duas
+formas de instalação, e nenhuma delas precisa de Node na tua máquina:
 
-- **Docker** — a imagem constrói a consola durante a build, numa etapa própria;
-- **Nativa** (`install-native.sh`) — `frontend/dist` está versionado no
-  repositório, portanto um `git clone` já o traz construído.
+- **Docker** — a imagem constrói cada consola durante a build, em etapas próprias;
+- **Nativa** (`install-native.sh`) — `frontend/dist` e `frontend-v2/dist` estão
+  versionados no repositório, portanto um `git clone` já os traz construídos.
 
 ```bash
 caspar serve
 ```
 
-O arranque imprime os URLs da API (`/docs`) e da consola CVM (`/app`). Se a
-consola faltar — só acontece num source tree a que alguém apagou o `dist` — a
-linha do `/app` é substituída por um aviso explícito, em vez de te dar um
-endereço que responde 404. Nesse caso: `git checkout frontend/dist`.
+O arranque imprime os URLs da API (`/docs`), da consola CVM (`/app`) e da consola
+v2 (`/v2/app`). Se uma consola faltar — só acontece num source tree a que alguém
+apagou o `dist` — a linha correspondente é substituída por um aviso explícito (ou
+omitida, no caso da v2), em vez de te dar um endereço que responde 404. Nesse
+caso: `git checkout frontend/dist` ou `git checkout frontend-v2/dist`.
 
-> Só precisas de Node se fores **editar** o código React (`frontend/src`). Aí
-> corres `npm install && npm run build` para regenerar o `dist` — que deve ser
-> commitado, senão a consola versionada fica desactualizada face ao código.
+> Só precisas de Node se fores **editar** o código React (`frontend/src` ou
+> `frontend-v2/src`). Aí corres `npm install && npm run build` na pasta
+> respectiva para regenerar o `dist` — que deve ser commitado, senão a consola
+> versionada fica desactualizada face ao código.
 
 ### 6.2 Percorrer as oito páginas
 
-Abre `http://localhost:8000/app`.
+Abre `http://localhost:2027/app`.
 
 | Página | O que verificar |
 |---|---|
@@ -645,7 +647,7 @@ e um intervalo curto (2 segundos) para não esperares. O equivalente por API,
 útil para confirmar o que a consola está a fazer:
 
 ```bash
-curl -s -X POST localhost:8000/api/v1/watch \
+curl -s -X POST localhost:2027/api/v1/watch \
      -H 'Content-Type: application/json' \
      -d '{"path": "'$HOME'/watch-demo/apache2.conf", "interval": 2}'
 ```
@@ -693,7 +695,7 @@ diferença que faz o `watch` parecer partido quando não está.
 Confirmação por API (`events` tem de crescer a cada degrau):
 
 ```bash
-curl -s localhost:8000/api/v1/watch/$S | python3 -m json.tool | head -20
+curl -s localhost:2027/api/v1/watch/$S | python3 -m json.tool | head -20
 ```
 
 Latência medida: **~2 segundos** entre gravar o ficheiro e o evento novo, com
@@ -711,9 +713,9 @@ São capacidades que o CLI não tem. Testadas pelos botões da consola ou:
 
 ```bash
 S=<watch_session>
-curl -s -X POST localhost:8000/api/v1/watch/$S/pause
-curl -s -X POST localhost:8000/api/v1/watch/$S/resume
-curl -s -X POST localhost:8000/api/v1/watch/$S/stop
+curl -s -X POST localhost:2027/api/v1/watch/$S/pause
+curl -s -X POST localhost:2027/api/v1/watch/$S/resume
+curl -s -X POST localhost:2027/api/v1/watch/$S/stop
 ```
 
 O `runner_state` deve percorrer `running → paused → running → stopped`.

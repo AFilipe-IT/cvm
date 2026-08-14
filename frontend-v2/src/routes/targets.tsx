@@ -119,13 +119,21 @@ function TargetsPage() {
             </div>
 
             {/* "0 findings" on a target that was never assessed would claim a
-                clean result for something nobody looked at. */}
+                clean result for something nobody looked at. The two ways of
+                not being assessed read differently to an operator: no scan is
+                something to go and do, a scan with no rules is a scan already
+                run whose result means nothing until the rules are loaded. */}
             <div className="mt-4 flex items-center gap-4 text-xs text-muted-foreground">
               {t.score !== null ? (
                 <>
                   <span className="num">{t.findings_count} findings</span>
                   <span className="num">{t.critical_count} critical</span>
                 </>
+              ) : t.sparkline.length > 0 ? (
+                <span>
+                  Scanned, but the knowledge base holds no rules for this
+                  target — not a clean result.
+                </span>
               ) : (
                 <span>No assessment has been run against this target.</span>
               )}

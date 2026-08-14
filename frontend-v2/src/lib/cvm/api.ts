@@ -137,7 +137,21 @@ interface ScanRow {
   severity: string | null;
   total_issues: number;
   timestamp: string;
+  // How many rules the knowledge base held for this target when the scan ran.
+  // 0 means no finding was POSSIBLE, so the 0.0 score beside it is an artefact
+  // of an empty knowledge base rather than a clean system. null is unknown — a
+  // scan saved before the manifest carried the count — and reads as assessed.
+  rules_for_target: number | null;
 }
+
+// A scan that could not produce a finding did not assess anything, whatever
+// score the aggregation returned. Treated exactly like "no scan at all", which
+// this console already renders as `—` rather than as a zero.
+//
+// Exported for tests: it is the single point where a 0.0 either becomes a
+// visible score or is suppressed, and getting it backwards is silent.
+export const scanAssessedSomething = (scan: ScanRow | undefined): boolean =>
+  scan !== undefined && scan.rules_for_target !== 0;
 
 /**
  * The registry of assessable targets, joined to the latest scan of each.
@@ -169,19 +183,24 @@ export function useTargets(): UseQueryResult<Target[]> {
 
       return registered.map<Target>((t) => {
         const scan = latest.get(t.name);
+        const wasAssessed = scanAssessedSomething(scan);
         return {
           id: t.name,
           label: t.display_name || t.name,
           icon_key: t.name,
           version: t.version ?? "",
-          score: scan ? scan.global_temporal_score : null,
-          severity: (scan?.severity as Severity | undefined) ?? null,
-          findings_count: scan?.total_issues ?? 0,
+          score: wasAssessed ? scan!.global_temporal_score : null,
+          severity: wasAssessed ? (scan!.severity as Severity | null) : null,
+          // Not 0: a zero here reads as "checked, found nothing wrong". The
+          // count is unknown when nothing could have been found.
+          findings_count: wasAssessed ? scan!.total_issues : null,
           critical_count: 0,
           benchmark: t.benchmark_source ?? "",
           // Every registered plugin is assessable; "offline" here means no
-          // assessment exists yet, not that a service is down.
-          status: scan ? "online" : "offline",
+          // assessment exists yet, not that a service is down. A scan against
+          // an empty knowledge base leaves the target in that same state — it
+          // ran, but it established nothing.
+          status: wasAssessed ? "online" : "offline",
           sparkline: (history.get(t.name) ?? []).slice(0, 12).reverse(),
         };
       });

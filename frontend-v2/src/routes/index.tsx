@@ -340,8 +340,14 @@ function Overview() {
                   <TechIcon iconKey={t.icon_key} size="sm" />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13px] font-medium">{t.label}</div>
+                    {/* A null count means nothing assessed this target, so
+                        there is no number to show — "0 findings" would read as
+                        an all-clear and "null findings" as a bug. */}
                     <div className="num truncate text-[11px] text-muted-foreground">
-                      {t.version} · {t.findings_count} findings
+                      {t.version} ·{" "}
+                      {t.findings_count === null
+                        ? "not assessed"
+                        : `${t.findings_count} findings`}
                     </div>
                   </div>
                   <Sparkline

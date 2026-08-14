@@ -166,7 +166,11 @@ export interface Target {
   version: string;
   score: number | null;
   severity: Severity | null;
-  findings_count: number;
+  // null when the target was never assessed — no scan at all, or a scan whose
+  // knowledge base held no rules. Distinct from 0, which is a real count from a
+  // real assessment: "0 findings" is an all-clear, and giving one to a target
+  // nothing measured is the false assurance this model exists to prevent.
+  findings_count: number | null;
   critical_count: number;
   benchmark: string;
   status: "online" | "offline";

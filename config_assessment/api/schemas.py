@@ -47,6 +47,27 @@ class ReportRequest(BaseModel):
     online: bool = False
 
 
+class ChainCreate(BaseModel):
+    """A hand-written attack chain — the request half of `caspar chain add`.
+
+    `target` and `directives` are not validated here beyond their shape: what
+    makes a chain valid is whether those directives have rules in THIS
+    knowledge base, which only the engine can answer. Splitting the checks
+    between this model and the engine would let the API and the CLI accept
+    different chains.
+    """
+    target: str
+    directives: list[str]
+    justification: str
+    chain_id: str | None = None
+    author: str = ""
+    amplification: float = 1.0
+    cross_target: bool = False
+    # A collision means an id already in use. Replacing it by default would
+    # overwrite someone else's chain, so the caller has to ask.
+    overwrite: bool = False
+
+
 class HealthResponse(BaseModel):
     status: Literal["ok"]
     db_reachable: bool

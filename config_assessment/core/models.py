@@ -144,6 +144,13 @@ class AttackChain(BaseModel):
     active: bool = False
     triggered_by: list = Field(default_factory=list)
     amplified_score: float = 0.0
+    # Who asserted this chain — "generated" by the build pipeline, or "manual"
+    # when an operator wrote it. Detection treats the two identically; the
+    # distinction exists for the reader, who weighs a hand-written claim
+    # differently from one the pipeline derived from a benchmark.
+    provenance: Literal["generated", "manual"] = "generated"
+    # Attribution for a manual chain; empty for generated ones.
+    author: str = ""
 
 
 # ------------------------------------------------------------------ #

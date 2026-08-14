@@ -1,16 +1,23 @@
 """
 config_assessment/api/routers/knowledge.py
 ----------------------------------------------
-GET /api/v1/knowledge/... — Knowledge Base explorer, backed by the
-Knowledge Engine (a read façade over Database).
+/api/v1/knowledge/... — Knowledge Base explorer, backed by the Knowledge
+Engine (a read façade over Database).
+
+Almost all of it is read-only. The exception is attack-chain authoring
+(POST/DELETE /chains), which goes through core/engines/chain_authoring so that
+a chain written from the console is validated exactly as `caspar chain add`
+validates one.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from config_assessment.api.deps import get_db
+from config_assessment.api.deps import get_db, require_api_key
+from config_assessment.api.schemas import ChainCreate
 from config_assessment.core.db.database import Database
+from config_assessment.core.engines import chain_authoring
 from config_assessment.core.engines.knowledge import KnowledgeEngine
 from config_assessment.core.models import AttackChain, Misconfiguration
 
@@ -51,3 +58,57 @@ def list_chains(target: str, db: Database = Depends(get_db)) -> list[AttackChain
     combined risk exceeds the sum of their parts, with the amplification
     factor applied when every directive in the chain is present."""
     return KnowledgeEngine(db).list_chains_for_target(target)
+
+
+@router.post("/chains", response_model=AttackChain,
+             status_code=status.HTTP_201_CREATED)
+def create_chain_endpoint(
+    body: ChainCreate,
+    db: Database = Depends(get_db),
+    _auth: None = Depends(require_api_key),
+) -> AttackChain:
+    """Record an attack chain by hand — the equivalent of `caspar chain add`.
+
+    The build pipeline derives chains from benchmarks; this is for the ones an
+    operator knows from their own estate. Both go through the same authoring
+    engine, so the console and the CLI accept exactly the same chains, and the
+    stored chain is marked `provenance: "manual"` so a reader can tell which
+    claims came from a person.
+
+    A chain that could never fire is refused rather than stored: 422 carries
+    the reason, which is written for the operator, not for a log.
+    """
+    try:
+        return chain_authoring.create_chain(
+            db,
+            target_name=body.target,
+            directives=body.directives,
+            justification=body.justification,
+            chain_id=body.chain_id,
+            amplification=body.amplification,
+            author=body.author,
+            cross_target=body.cross_target,
+            overwrite=body.overwrite,
+        )
+    except chain_authoring.ChainValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+
+@router.delete("/targets/{target}/chains/{chain_id}",
+               status_code=status.HTTP_204_NO_CONTENT)
+def delete_chain_endpoint(
+    target: str,
+    chain_id: str,
+    db: Database = Depends(get_db),
+    _auth: None = Depends(require_api_key),
+) -> None:
+    """Remove a chain definition.
+
+    Scans already stored keep the chain they fired at the time — this deletes
+    the definition, not the record of it having matched. A generated chain
+    removed here comes back on the next build; a hand-written one does not.
+    """
+    if not chain_authoring.delete_chain(db, target_name=target, chain_id=chain_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Chain not found")

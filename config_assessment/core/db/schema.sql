@@ -115,6 +115,14 @@ CREATE TABLE IF NOT EXISTS attack_chains (
     amplification        REAL    NOT NULL DEFAULT 1.0,
     justification        TEXT    NOT NULL DEFAULT '',
     cross_target         INTEGER NOT NULL DEFAULT 0,
+    -- Who authored this chain: 'generated' (produced by the build pipeline) or
+    -- 'manual' (asserted by an operator). A reader weighing a chain needs to
+    -- know which, and a rebuild must not silently discard hand-written ones.
+    provenance           TEXT    NOT NULL DEFAULT 'generated',
+    -- Attribution for a manual chain ('' for generated ones). Kept apart from
+    -- `justification`, which argues why the combination is dangerous rather
+    -- than who claimed it.
+    author               TEXT    NOT NULL DEFAULT '',
     created_at           TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     UNIQUE (target_name, chain_id)
 );

@@ -67,6 +67,7 @@ from cli.commands.report_cmds import (                                # noqa: E4
     targets, diff, badge, explain, history, report, trend,
 )
 from cli.commands.manage_cmds import suppress, doctor, fix, promote   # noqa: E402,F401
+from cli.commands.chain_cmds import chain_group                        # noqa: E402,F401
 from cli.commands.serve_cmds import serve                              # noqa: E402,F401
 from cli.commands.demo_cmds import demo                                # noqa: E402,F401
 
@@ -103,6 +104,7 @@ for _cmd in (
     build, fetch_exploits, refresh,                # build-time
     targets, diff, badge, explain, history, report, trend,  # reporting
     suppress, doctor, fix, promote,                # state management
+    chain_group,                                   # hand-written attack chains
     serve,                                          # REST API + CVM Console
     demo,                                           # example configurations
     about,                                          # wordmark + what CVM is

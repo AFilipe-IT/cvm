@@ -1,9 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { BookOpen, Link2, Search, X } from "lucide-react";
+import { BookOpen, Link2, PenLine, Plus, Search, Trash2, X } from "lucide-react";
 
 import { AppShell } from "@/components/cvm/AppShell";
-import { Select, Tabs, TextInput } from "@/components/cvm/forms";
+import {
+  Button,
+  Field,
+  FormError,
+  Select,
+  Tabs,
+  TextInput,
+} from "@/components/cvm/forms";
 import {
   EmptyState,
   Panel,
@@ -17,6 +24,8 @@ import { ErrorState } from "@/components/cvm/states";
 import { useTargets } from "@/lib/cvm/api";
 import {
   useBenchmarks,
+  useCreateChain,
+  useDeleteChain,
   useRuleDetail,
   useTargetChains,
   useTargetRules,
@@ -437,6 +446,15 @@ function Meta({ label, value }: { label: string; value: string }) {
 
 function ChainsPanel({ target }: { target: string }) {
   const { data: chains, isLoading, error } = useTargetChains(target || undefined);
+  const [authoring, setAuthoring] = useState(false);
+  const deleteChain = useDeleteChain();
+
+  // Closing the form on a target switch: the directive list it offers belongs
+  // to the old target, and a half-filled form pointing at the wrong service is
+  // worse than no form.
+  useEffect(() => {
+    setAuthoring(false);
+  }, [target]);
 
   if (error) return <ErrorState error={error} />;
 
@@ -444,7 +462,19 @@ function ChainsPanel({ target }: { target: string }) {
     <Panel>
       <PanelHeader
         title="Chain definitions"
+        action={
+          <Button
+            icon={<Plus className="size-4" />}
+            onClick={() => setAuthoring((v) => !v)}
+            aria-expanded={authoring}
+          >
+            {authoring ? "Cancel" : "Add chain"}
+          </Button>
+        }
       />
+      {authoring ? (
+        <ChainAuthoringForm target={target} onDone={() => setAuthoring(false)} />
+      ) : null}
       <div className="p-4">
         {isLoading ? (
           <div className="space-y-2">
@@ -464,18 +494,60 @@ function ChainsPanel({ target }: { target: string }) {
                     <div className="truncate text-sm font-medium">
                       {c.chain_id.replace(/[-_]/g, " ")}
                     </div>
-                    {c.cross_target ? (
-                      <span className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                        <Link2 className="size-3" /> Crosses targets
-                      </span>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                      {/* Provenance, because a hand-written claim and one
+                          derived from a benchmark are not equally auditable
+                          and the reader is entitled to tell them apart. */}
+                      {c.provenance === "manual" ? (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5"
+                          style={{
+                            color: "var(--accent)",
+                            borderColor:
+                              "color-mix(in oklab, var(--accent) 35%, transparent)",
+                          }}
+                        >
+                          <PenLine className="size-3" />
+                          {c.author ? `Added by ${c.author}` : "Added by hand"}
+                        </span>
+                      ) : null}
+                      {c.cross_target ? (
+                        <span className="inline-flex items-center gap-1">
+                          <Link2 className="size-3" /> Crosses targets
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {/* Step count, not the amplification multiplier: the factor
+                        has no defensible derivation and is hidden by design
+                        here as in the CLI. */}
+                    <span className="num rounded-md border border-border px-2 py-0.5 text-[11px] font-semibold">
+                      {c.misconfig_directives.length} steps
+                    </span>
+                    {c.provenance === "manual" ? (
+                      <button
+                        type="button"
+                        aria-label={`Remove chain ${c.chain_id}`}
+                        disabled={deleteChain.isPending}
+                        onClick={() => {
+                          // Only manual chains offer this: deleting a generated
+                          // one would silently come back on the next build, so
+                          // the button would be a lie.
+                          if (
+                            window.confirm(
+                              `Remove "${c.chain_id}"? Rebuilding will not bring it back.`,
+                            )
+                          ) {
+                            deleteChain.mutate({ target, chainId: c.chain_id });
+                          }
+                        }}
+                        className="rounded-md border border-border p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
                     ) : null}
                   </div>
-                  {/* Step count, not the amplification multiplier: the factor
-                      has no defensible derivation and is hidden by design
-                      here as in the CLI. */}
-                  <span className="num shrink-0 rounded-md border border-border px-2 py-0.5 text-[11px] font-semibold">
-                    {c.misconfig_directives.length} steps
-                  </span>
                 </div>
 
                 <ol className="mt-2.5 space-y-1">
@@ -504,11 +576,154 @@ function ChainsPanel({ target }: { target: string }) {
           <EmptyState
             icon={Link2}
             title="No chains defined for this target"
-            description="Chains are declared when a plugin is built; not every technology has them."
+            description="Chains are declared when a plugin is built; not every technology has them. Add one by hand if you know a combination worth flagging."
           />
         )}
       </div>
     </Panel>
+  );
+}
+
+/**
+ * Writing a chain by hand — the console half of `caspar chain add`.
+ *
+ * The directives on offer are this target's rules, not free text: a chain whose
+ * directive has no rule can never fire, so the server refuses it. Offering only
+ * what exists turns that refusal into a case the operator cannot reach.
+ *
+ * Everything else is validated server-side and the 422 shown verbatim. This form
+ * deliberately does not re-implement those rules — two validators would
+ * eventually disagree, and the operator would be the one to find out.
+ */
+function ChainAuthoringForm({
+  target,
+  onDone,
+}: {
+  target: string;
+  onDone: () => void;
+}) {
+  const { data: rules, isLoading } = useTargetRules(target || undefined);
+  const createChain = useCreateChain();
+
+  const [selected, setSelected] = useState<string[]>([]);
+  const [justification, setJustification] = useState("");
+  const [author, setAuthor] = useState("");
+
+  // One entry per directive, in the order the rules came back, so the picker is
+  // stable between renders and a directive covered by several rules appears once.
+  const directives = [...new Set((rules ?? []).map((r) => r.directive))].sort();
+
+  const toggle = (d: string) =>
+    setSelected((prev) =>
+      // Order matters: it is the order the steps are read in, so a re-picked
+      // directive goes to the end rather than back to its alphabetical slot.
+      prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d],
+    );
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    createChain.mutate(
+      {
+        target,
+        directives: selected,
+        justification: justification.trim(),
+        author: author.trim(),
+      },
+      {
+        onSuccess: () => {
+          setSelected([]);
+          setJustification("");
+          onDone();
+        },
+      },
+    );
+  };
+
+  return (
+    <form
+      onSubmit={submit}
+      className="space-y-4 border-b border-border bg-panel-alt/40 p-4"
+    >
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        Pick two or more settings whose combination is worse than any one of them
+        alone. The chain fires on an assessment where all of them are present and
+        at least one is misconfigured — the same rule the built-in chains follow.
+      </p>
+
+      <Field
+        label={`Steps (${selected.length} selected)`}
+        hint="Click to add; the order you pick is the order they are read in."
+      >
+        {isLoading ? (
+          <Skeleton className="h-24" />
+        ) : directives.length ? (
+          <div className="scroll-x max-h-44 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-border bg-panel p-2 flex">
+            {directives.map((d) => {
+              const at = selected.indexOf(d);
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => toggle(d)}
+                  aria-pressed={at >= 0}
+                  className={
+                    at >= 0
+                      ? "inline-flex items-center gap-1.5 rounded-md border border-accent bg-accent/10 px-2 py-1 font-mono text-[11px] text-foreground"
+                      : "inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 font-mono text-[11px] text-muted-foreground hover:text-foreground"
+                  }
+                >
+                  {at >= 0 ? (
+                    <span className="num flex size-4 items-center justify-center rounded-full bg-accent text-[9px] text-accent-foreground">
+                      {at + 1}
+                    </span>
+                  ) : null}
+                  {d}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            This target has no rules yet, so there is nothing to chain.
+          </p>
+        )}
+      </Field>
+
+      <Field
+        label="Why this combination is dangerous"
+        htmlFor="chain-justification"
+        hint="Recorded with the chain and shown wherever it fires."
+      >
+        <textarea
+          id="chain-justification"
+          value={justification}
+          onChange={(e) => setJustification(e.target.value)}
+          rows={3}
+          className="w-full rounded-lg border border-border bg-panel px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
+          placeholder="Together these let an unauthenticated request reach…"
+        />
+      </Field>
+
+      <Field label="Your name" htmlFor="chain-author" hint="Optional.">
+        <TextInput
+          id="chain-author"
+          value={author}
+          onChange={(e) => setAuthor(e.target.value)}
+          placeholder="Who is asserting this"
+        />
+      </Field>
+
+      <FormError error={createChain.error} />
+
+      <div className="flex items-center gap-2">
+        <Button type="submit" variant="primary" disabled={createChain.isPending}>
+          {createChain.isPending ? "Saving…" : "Save chain"}
+        </Button>
+        <Button type="button" onClick={onDone}>
+          Cancel
+        </Button>
+      </div>
+    </form>
   );
 }
 

@@ -161,6 +161,13 @@ class Database:
             # nessa altura. Os scans novos passam a trazê-lo.
             ("manifest_json",
              "ALTER TABLE scan_results ADD COLUMN manifest_json TEXT NOT NULL DEFAULT '{}'"),
+            # Cadeias já gravadas vieram todas do pipeline de build, por isso
+            # 'generated' é o valor honesto para o histórico: nesta altura não
+            # havia forma de escrever uma cadeia à mão.
+            ("provenance",
+             "ALTER TABLE attack_chains ADD COLUMN provenance TEXT NOT NULL DEFAULT 'generated'"),
+            ("author",
+             "ALTER TABLE attack_chains ADD COLUMN author TEXT NOT NULL DEFAULT ''"),
         ]
         for col_name, sql in simple_migrations:
             try:
@@ -719,17 +726,19 @@ class Database:
             INSERT INTO attack_chains (
                 target_id, target_name, chain_id,
                 misconfig_directives, amplification,
-                justification, cross_target
+                justification, cross_target, provenance, author
             ) VALUES (
                 :target_id, :target_name, :chain_id,
                 :misconfig_directives, :amplification,
-                :justification, :cross_target
+                :justification, :cross_target, :provenance, :author
             )
             ON CONFLICT(target_name, chain_id) DO UPDATE SET
                 misconfig_directives = excluded.misconfig_directives,
                 amplification        = excluded.amplification,
                 justification        = excluded.justification,
-                cross_target         = excluded.cross_target
+                cross_target         = excluded.cross_target,
+                provenance           = excluded.provenance,
+                author               = excluded.author
             """,
             {
                 "target_id": target_id,
@@ -739,6 +748,8 @@ class Database:
                 "amplification": chain.amplification,
                 "justification": chain.justification,
                 "cross_target": int(chain.cross_target),
+                "provenance": chain.provenance,
+                "author": chain.author,
             },
         )
         self._conn.commit()
@@ -750,8 +761,24 @@ class Database:
         )
         return [self._row_to_chain(r) for r in cur.fetchall()]
 
+    def delete_attack_chain(self, target_name: str, chain_id: str) -> bool:
+        """Remove one chain definition. True when a row was actually deleted.
+
+        The counterpart to writing a chain by hand: a mistaken one must be
+        retractable without editing the database directly. Scans already stored
+        keep the chain they fired at the time — this removes the definition, not
+        the history of it having matched.
+        """
+        cur = self._conn.execute(
+            "DELETE FROM attack_chains WHERE target_name = ? AND chain_id = ?",
+            (target_name, chain_id),
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
+
     @staticmethod
     def _row_to_chain(row: sqlite3.Row) -> AttackChain:
+        keys = row.keys()
         return AttackChain(
             chain_id=row["chain_id"],
             target_name=row["target_name"],
@@ -759,6 +786,13 @@ class Database:
             amplification=row["amplification"],
             justification=row["justification"],
             cross_target=bool(row["cross_target"]),
+            # Read defensively: a database written before these columns existed
+            # is migrated on open, but a row read through a connection that has
+            # not been (a raw sqlite3 handle in a test, say) must still load.
+            provenance=(
+                row["provenance"] if "provenance" in keys else "generated"
+            ),
+            author=row["author"] if "author" in keys else "",
         )
 
     # ------------------------------------------------------------------ #

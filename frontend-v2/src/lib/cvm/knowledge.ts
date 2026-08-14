@@ -13,9 +13,14 @@
  * from the `targets` table — three columns, no model.
  */
 
-import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type UseQueryResult,
+} from "@tanstack/react-query";
 
-import { apiGet } from "./client";
+import { apiDelete, apiGet, apiPost } from "./client";
 
 /** One row per registered target — the provenance behind its rules. */
 export interface Benchmark {
@@ -68,6 +73,21 @@ export interface ChainDefinition {
   cross_target: boolean;
   active: boolean;
   amplified_score: number;
+  /** Who asserted it: the build pipeline, or a person. */
+  provenance: "generated" | "manual";
+  author: string;
+}
+
+/** The request body of `POST /knowledge/chains` — `caspar chain add`. */
+export interface ChainCreate {
+  target: string;
+  directives: string[];
+  justification: string;
+  chain_id?: string;
+  author?: string;
+  amplification?: number;
+  cross_target?: boolean;
+  overwrite?: boolean;
 }
 
 export function useBenchmarks(): UseQueryResult<Benchmark[]> {
@@ -109,5 +129,46 @@ export function useTargetChains(
     queryKey: ["knowledge", "chains", target],
     queryFn: () => apiGet<ChainDefinition[]>(`/knowledge/targets/${target}/chains`),
     enabled: Boolean(target),
+  });
+}
+
+/**
+ * What writing a chain invalidates.
+ *
+ * A new chain changes the knowledge base, and any scan run afterwards can fire
+ * it — so the chain views and the posture both go stale. The scans already
+ * stored do not change: a chain is matched at scan time, not at read time.
+ */
+function useInvalidateAfterChainWrite(): () => void {
+  const qc = useQueryClient();
+  return () => {
+    for (const key of ["knowledge", "chains", "posture"]) {
+      qc.invalidateQueries({ queryKey: [key] });
+    }
+  };
+}
+
+/**
+ * Record a chain by hand — the console half of `caspar chain add`.
+ *
+ * Validation lives on the server (core/engines/chain_authoring), so the form
+ * does not re-implement the rules: a chain the CLI would refuse comes back as
+ * a 422 whose message is written for the operator and can be shown verbatim.
+ */
+export function useCreateChain() {
+  const invalidate = useInvalidateAfterChainWrite();
+  return useMutation({
+    mutationFn: (body: ChainCreate) =>
+      apiPost<ChainDefinition>("/knowledge/chains", body),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteChain() {
+  const invalidate = useInvalidateAfterChainWrite();
+  return useMutation({
+    mutationFn: ({ target, chainId }: { target: string; chainId: string }) =>
+      apiDelete<void>(`/knowledge/targets/${target}/chains/${chainId}`),
+    onSuccess: invalidate,
   });
 }

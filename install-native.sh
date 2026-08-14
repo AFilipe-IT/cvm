@@ -31,7 +31,7 @@ sqlite3 ccss.db < data/ccss_canonical.sql
 # saber porque é que a consola não aparece, em vez de descobrir com um 404.
 # Cada uma é verificada em separado — o 'serve' monta-as em prefixos distintos e
 # uma pode faltar sem a outra.
-for console in "frontend:/app" "frontend-v2:/v2/app"; do
+for console in "frontend-v2:/app" "frontend:/v1/app"; do
     dir="${console%%:*}"
     prefix="${console##*:}"
     if [ ! -f "$dir/dist/index.html" ]; then
@@ -44,8 +44,8 @@ echo ""
 echo "✅ CASPAR instalado com sucesso"
 echo "   Activar: source .venv/bin/activate"
 echo "   Testar:  caspar targets"
-echo "   Consola: caspar serve   →  http://127.0.0.1:2027/app"
-echo "            consola v2     →  http://127.0.0.1:2027/v2/app"
+echo "   Consola: caspar serve   →  http://127.0.0.1:2027/app      (v2)"
+echo "            consola v1     →  http://127.0.0.1:2027/v1/app"
 echo ""
 echo "Para build-time (plugin add, build):"
 echo "   Instalar Ollama: https://ollama.ai"

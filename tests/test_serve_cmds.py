@@ -9,6 +9,10 @@ supported installation they are present. The mount soft-fails when one isn't,
 which used to mean `serve` printed a console URL that answered 404 — the startup
 banner is the only place that absence can surface, so it is worth a test of its
 own.
+
+v2 is the primary console and answers at /app; v1 moved to /v1/app when v2 was
+promoted. Each bundle must therefore be built for a different prefix than before,
+which is asserted directly against the committed artefacts below.
 """
 
 from __future__ import annotations
@@ -50,18 +54,28 @@ class TestConsoleDistIsShared:
             "have no v2 console. Rebuild with `npm run build` in frontend-v2/."
         )
 
-    def test_the_v2_bundle_was_built_for_the_prefix_it_is_mounted_at(self):
+    def test_each_bundle_was_built_for_the_prefix_it_is_mounted_at(self):
         """A bundle built for one prefix requests its assets from that prefix
-        wherever it is actually mounted, so a dist built with the default base
-        would load a blank page at /v2/app and 404 on every asset. This is the
-        one build mistake that survives a green `npm run build`, which is why
-        it is asserted against the committed artefact rather than trusted."""
-        html = (sc._console_v2_dist() / "index.html").read_text(encoding="utf-8")
-        assert '"/v2/app/assets/' in html, (
-            "frontend-v2/dist was built with the wrong base. Rebuild with "
-            "`npm run build` in frontend-v2/ (vite.config.ts pins base to "
-            "/v2/app/); do not override CVM_BASE for a committed build."
-        )
+        wherever it is actually mounted, so a dist built with the wrong base
+        loads a blank page and 404s on every asset. This is the one build
+        mistake that survives a green `npm run build`, which is why it is
+        asserted against the committed artefacts rather than trusted.
+
+        Both are checked: promoting v2 to /app moved v1 to /v1/app, so the
+        prefix each was built for changed at the same time and a stale bundle
+        of either one is the failure this catches.
+        """
+        for dist, prefix, folder in (
+            (sc._console_v2_dist(), "/app", "frontend-v2"),
+            (sc._console_dist(), "/v1/app", "frontend"),
+        ):
+            html = (dist / "index.html").read_text(encoding="utf-8")
+            assert f'"{prefix}/assets/' in html, (
+                f"{folder}/dist was built with the wrong base — it is mounted "
+                f"at {prefix}. Rebuild with `npm run build` in {folder}/ "
+                f"(vite.config.ts pins the base); do not override CVM_BASE for "
+                f"a committed build."
+            )
 
 
 class TestStartupBanner:
@@ -111,25 +125,29 @@ class TestStartupBanner:
         return res.output
 
     def test_console_url_shown_when_the_bundle_exists(self, tmp_path, monkeypatch):
+        """/app is v2's, so the primary URL depends on v2's bundle."""
         dist = tmp_path / "frontend" / "dist"
+        v2 = tmp_path / "frontend-v2" / "dist"
         dist.mkdir(parents=True)
-        out = self._banner(monkeypatch, dist)
-        assert "/app" in out
+        v2.mkdir(parents=True)
+        out = self._banner(monkeypatch, dist, v2_dist=v2)
+        assert ":2027/app" in out
         assert "unavailable" not in out
 
     def test_absence_is_reported_instead_of_a_dead_url(self, tmp_path, monkeypatch):
-        dist = tmp_path / "frontend" / "dist"     # deliberately not created
-        dist.parent.mkdir(parents=True)
-        out = self._banner(monkeypatch, dist)
+        """With v2 absent, /app has nothing to serve and must not be printed."""
+        dist = tmp_path / "frontend" / "dist"
+        dist.mkdir(parents=True)
+        out = self._banner(monkeypatch, dist)   # v2 path deliberately absent
         assert "unavailable" in out
-        # No console URL to click: that link would have 404'd. Matched with the
-        # host prefix rather than as a bare "/app" substring, which /v2/app also
-        # contains — the loose form passed only because v2 happened to be absent.
+        # No /app URL to click: that link would have 404'd. Matched with the
+        # host prefix rather than as a bare "/app" substring, which /v1/app
+        # also contains — the loose form would pass on v1's line alone.
         assert ":2027/app" not in out
         # The API is unaffected and must still be advertised.
         assert "/docs" in out
 
-    def test_v2_is_announced_at_its_own_prefix_when_built(self, tmp_path, monkeypatch):
+    def test_both_consoles_are_announced_at_their_own_prefixes(self, tmp_path, monkeypatch):
         """Both consoles are served side by side, each at its own prefix."""
         dist = tmp_path / "frontend" / "dist"
         v2 = tmp_path / "frontend-v2" / "dist"
@@ -137,16 +155,15 @@ class TestStartupBanner:
         v2.mkdir(parents=True)
         out = self._banner(monkeypatch, dist, v2_dist=v2)
         assert ":2027/app" in out
-        assert ":2027/v2/app" in out
+        assert ":2027/v1/app" in out
 
-    def test_v2_is_silent_when_not_built(self, tmp_path, monkeypatch):
-        """v2's dist is not committed, so its absence is the common case.
-
-        Announcing a URL that 404s would be worse than saying nothing about a
-        console the user may not be working on at all.
-        """
-        dist = tmp_path / "frontend" / "dist"
-        dist.mkdir(parents=True)
-        out = self._banner(monkeypatch, dist)   # v2 path deliberately absent
+    def test_v1_is_silent_when_not_built(self, tmp_path, monkeypatch):
+        """v1 is the secondary console now; announcing a URL that 404s would be
+        worse than saying nothing about a console the user may not want."""
+        v2 = tmp_path / "frontend-v2" / "dist"
+        v2.mkdir(parents=True)
+        missing_v1 = tmp_path / "frontend" / "dist"   # deliberately not created
+        missing_v1.parent.mkdir(parents=True)         # _banner puts the db here
+        out = self._banner(monkeypatch, missing_v1, v2_dist=v2)
         assert ":2027/app" in out
-        assert "/v2/app" not in out
+        assert "/v1/app" not in out

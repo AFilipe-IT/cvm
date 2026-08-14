@@ -554,11 +554,12 @@ formas de instalação, e nenhuma delas precisa de Node na tua máquina:
 caspar serve
 ```
 
-O arranque imprime os URLs da API (`/docs`), da consola CVM (`/app`) e da consola
-v2 (`/v2/app`). Se uma consola faltar — só acontece num source tree a que alguém
-apagou o `dist` — a linha correspondente é substituída por um aviso explícito (ou
-omitida, no caso da v2), em vez de te dar um endereço que responde 404. Nesse
-caso: `git checkout frontend/dist` ou `git checkout frontend-v2/dist`.
+O arranque imprime os URLs da API (`/docs`), da consola CVM em `/app` (a v2, que
+é a principal) e da v1 em `/v1/app`. Se uma consola faltar — só acontece num
+source tree a que alguém apagou o `dist` — a linha correspondente é substituída
+por um aviso explícito (ou omitida, no caso da v1), em vez de te dar um endereço
+que responde 404. Nesse caso: `git checkout frontend-v2/dist` ou
+`git checkout frontend/dist`.
 
 > Só precisas de Node se fores **editar** o código React (`frontend/src` ou
 > `frontend-v2/src`). Aí corres `npm install && npm run build` na pasta
@@ -567,7 +568,8 @@ caso: `git checkout frontend/dist` ou `git checkout frontend-v2/dist`.
 
 ### 6.2 Percorrer as oito páginas
 
-Abre `http://localhost:2027/app`.
+Abre `http://localhost:2027/app` (a v2). A consola v1, com as mesmas oito
+páginas na disposição anterior, fica em `http://localhost:2027/v1/app`.
 
 | Página | O que verificar |
 |---|---|

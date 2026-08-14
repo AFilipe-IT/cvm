@@ -27,12 +27,12 @@ import { defineConfig } from "vitest/config";
  * same value back through `import.meta.env.BASE_URL`, so the prefix is declared
  * once here and never hand-copied.
  *
- * v2 is mounted at /v2/app while v1 keeps /app. `CVM_BASE` overrides it, which
- * is what a future promotion of v2 to /app would set rather than editing this
- * file and the router and the mount in three separate commits.
+ * v2 is the primary console and is mounted at /app; v1 moved to /v1/app when v2
+ * was promoted. `CVM_BASE` overrides this, which is how the promotion was made
+ * without hand-editing the prefix here, in the router and in the mount.
  */
 export default defineConfig({
-  base: process.env["CVM_BASE"] ?? "/v2/app/",
+  base: process.env["CVM_BASE"] ?? "/app/",
   plugins: [
     tanstackRouter({ target: "react", autoCodeSplitting: true }),
     react(),

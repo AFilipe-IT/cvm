@@ -4,11 +4,16 @@ import react from "@vitejs/plugin-react";
 import path from "node:path";
 
 // CVM console dev server. Backend (caspar serve) runs on :2027 and owns
-// /api/v1; the build output is mounted there at /app in production, so
-// base is relative and the dev proxy mirrors the same path prefix.
+// /api/v1; the build output is mounted there in production, so base is
+// relative and the dev proxy mirrors the same path prefix.
+//
+// v1 moved from /app to /v1/app when the v2 console was promoted to be the
+// primary one. `CVM_BASE` overrides the prefix, and main.tsx reads the same
+// value back through import.meta.env.BASE_URL — declared once here, so a
+// future move cannot leave the router pointing at the old prefix.
 export default defineConfig({
   plugins: [react()],
-  base: "/app/",
+  base: process.env["CVM_BASE"] ?? "/v1/app/",
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),

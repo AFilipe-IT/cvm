@@ -24,7 +24,7 @@ Runs on `http://127.0.0.1:5173` and proxies `/api/*` to `http://127.0.0.1:2027`
 npm run build
 ```
 
-Produces `dist/`, which `caspar serve` mounts at `/app` (`_mount_frontend` in
+Produces `dist/`, which `caspar serve` mounts at `/v1/app` (`_mount_frontend` in
 `cli/commands/serve_cmds.py`).
 
 **`dist/` is committed to the repository**, so neither supported installation
@@ -61,7 +61,7 @@ Markup that a typecheck already covers is not tested.
 ## Docker
 
 `docker/caspar/Dockerfile` builds the console in a Node stage and copies
-`dist/` into the runtime image, so `/app` works from the container with no
+`dist/` into the runtime image, so `/v1/app` works from the container with no
 local `npm run build`. Building from source in-image (rather than copying a
 local `dist/`) is why `.dockerignore` excludes `frontend/dist` — a stale
 developer build can never be baked in. `Dockerfile.slim` is untouched and
@@ -70,7 +70,9 @@ deliberately excludes the API, dashboard, and console entirely.
 ## Stack
 
 - Vite + React 18 + TypeScript
-- React Router v6 (client-side routing, `basename="/app"`)
+- React Router v6 (client-side routing; `basename` comes from
+  `import.meta.env.BASE_URL`, i.e. vite.config.ts's `base` — `/v1/app/` since
+  the v2 console was promoted to `/app`)
 - TanStack Query (all data fetching; `refetchInterval` is the mechanism
   later phases use for job/watch polling)
 - CSS Modules + a hand-written token system (`src/styles/tokens.css`) —

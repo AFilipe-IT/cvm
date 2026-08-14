@@ -34,6 +34,13 @@ RUN npm run build
 FROM node:22-slim AS console-v2
 
 WORKDIR /build
+# node:22-slim ships npm 10, which resolves this tree differently from the npm 11
+# that writes the committed lockfile: it reports `Missing: lru-cache@11.5.2` for
+# an entry that is demonstrably in the file (jsdom's nested copy, pulled in by
+# vitest's environment). Pinning the major to the one that authors the lockfile
+# is what makes `npm ci` reproducible here — without it this stage cannot build
+# at all, which is how it went unnoticed until the image was rebuilt.
+RUN npm install -g npm@11
 COPY frontend-v2/package.json frontend-v2/package-lock.json ./
 RUN npm ci
 

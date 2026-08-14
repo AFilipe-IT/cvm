@@ -26,8 +26,8 @@ def serve(ctx: click.Context, host: str, port: int, reload: bool) -> None:
 
     \b
     Swagger UI:       http://127.0.0.1:2027/docs
-    CVM Console:      http://127.0.0.1:2027/app
-    CVM Console (v2): http://127.0.0.1:2027/v2/app
+    CVM Console:      http://127.0.0.1:2027/app      (v2, primary)
+    CVM Console (v1): http://127.0.0.1:2027/v1/app
     """
     # As dependências do servidor são um extra opcional: quem só usa a CLI não
     # precisa de instalar fastapi/uvicorn. Sem esta captura, um `pip install -e .`
@@ -57,21 +57,22 @@ def serve(ctx: click.Context, host: str, port: int, reload: bool) -> None:
 
     click.echo(click.style(f"  DB: {db_path}", dim=True))
     click.echo(click.style(f"  Swagger UI:  http://{host}:{port}/docs", fg="cyan"))
-    # Announcing the console unconditionally sent people to a URL that 404s
-    # when the bundle isn't there. The mount is soft-failing by design, so the
-    # startup line is the only place the absence can be reported.
-    if _console_dist().is_dir():
+    # Announcing a console unconditionally sent people to a URL that 404s when
+    # the bundle isn't there. The mounts are soft-failing by design, so the
+    # startup lines are the only place an absence can be reported.
+    #
+    # v2 is the primary console and answers at /app; v1 stays available at
+    # /v1/app. The v2 line carries the warning branch because /app is the URL
+    # everyone opens — an absence there is what needs explaining.
+    if _console_v2_dist().is_dir():
         click.echo(click.style(f"  CVM Console: http://{host}:{port}/app", fg="cyan"))
     else:
         click.echo(click.style(
             "  CVM Console: unavailable — the frontend bundle is missing.\n"
             "               Reinstall (./install-native.sh) or use the Docker "
             "image, which ships it.", fg="yellow"))
-    # v2's bundle is committed too, so this is normally present; the guard
-    # stays for the same reason v1's does — a cleaned dist must not produce a
-    # startup line pointing at a 404.
-    if _console_v2_dist().is_dir():
-        click.echo(click.style(f"  CVM Console (v2): http://{host}:{port}/v2/app",
+    if _console_dist().is_dir():
+        click.echo(click.style(f"  CVM Console (v1): http://{host}:{port}/v1/app",
                                fg="cyan"))
     click.echo()
 
@@ -89,27 +90,30 @@ def serve(ctx: click.Context, host: str, port: int, reload: bool) -> None:
 
 
 def _console_dist() -> Path:
-    """Where the built console lives, for both the mount and the startup line.
+    """The v1 console's bundle, served at /v1/app.
 
     One function so `serve` cannot advertise a console the mount then declines
-    to serve — the two used to derive the path independently."""
+    to serve — the two used to derive the path independently.
+
+    v1 moved off /app when v2 was promoted to primary. It is kept because it is
+    what the validated thesis artefact ships and what the dissertation's figures
+    show; /v1/app is a stable home for it rather than a deprecation."""
     return Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 
 def _console_v2_dist() -> Path:
-    """The v2 console's bundle.
+    """The v2 console's bundle — the primary console, served at /app.
 
-    Served at its own prefix rather than replacing v1. v1 is what the
-    validated artefact ships and what every existing link and document points
-    at, so moving /app is a product decision rather than a build detail; the
-    two run side by side until that decision is taken. The prefix is also why
-    v2 must be built with `--base=/v2/app/` — a bundle built for one prefix
-    requests its assets from that prefix wherever it is actually mounted."""
+    Each bundle must be built with `base` equal to the prefix it is mounted at
+    (v2 /app/, v1 /v1/app/): a bundle built for one prefix requests its assets
+    from that prefix wherever it is actually mounted, which surfaces as a blank
+    page rather than an error. Both are pinned in the respective
+    vite.config.ts and asserted in tests/test_serve_cmds.py."""
     return Path(__file__).resolve().parents[2] / "frontend-v2" / "dist"
 
 
 def _mount_frontend(app) -> None:
-    """Mount the built React consoles: v1 at /app, v2 at /v2/app.
+    """Mount the built React consoles: v2 at /app (primary), v1 at /v1/app.
 
     Both bundles are committed to the repository and the Docker image builds
     its own, so in every supported installation they are there — neither
@@ -140,15 +144,17 @@ def _mount_frontend(app) -> None:
                     return await super().get_response("index.html", scope)
                 raise
 
-    # v2 first: Starlette matches mounts in registration order, and /app is a
-    # prefix of nothing here, but registering the more specific path first
-    # keeps that independent of how the prefixes later change.
-    if _console_v2_dist().is_dir():
-        app.mount("/v2/app",
-                  SpaStaticFiles(directory=str(_console_v2_dist()), html=True),
-                  name="cvm-console-v2")
+    # Starlette matches mounts in registration order, so the more specific
+    # prefix goes first: /v1/app is not a sub-path of /app (a mount matches on
+    # whole path segments, and "v1" != "app"), but registering it first keeps
+    # correctness independent of how these prefixes change again.
     if _console_dist().is_dir():
-        app.mount("/app", SpaStaticFiles(directory=str(_console_dist()), html=True),
+        app.mount("/v1/app",
+                  SpaStaticFiles(directory=str(_console_dist()), html=True),
+                  name="cvm-console-v1")
+    if _console_v2_dist().is_dir():
+        app.mount("/app",
+                  SpaStaticFiles(directory=str(_console_v2_dist()), html=True),
                   name="cvm-console")
 
 

@@ -157,13 +157,19 @@ cd frontend-v2 && npm install && npm run dev    # consola em :5173
 ```
 
 Em produção não é preciso Node: o `dist/` das duas consolas está versionado, e
-o `caspar serve` monta a v1 em `/app` e a v2 em `/v2/app`. Quem instalar a
-partir do repositório tem as duas a funcionar sem instalar nada de JavaScript.
+o `caspar serve` monta **a v2 em `/app`** — é a consola principal — e a v1 em
+`/v1/app`. Quem instalar a partir do repositório tem as duas a funcionar sem
+instalar nada de JavaScript.
 
-O preço de versionar o build é que editar `frontend-v2/src/` obriga a correr
-`npm run build` e a commitar o `dist/` resultante — caso contrário a consola
-servida continua a ser a anterior. O `base` vem fixado no `vite.config.ts`
-(`/v2/app/`), pelo que um `npm run build` normal produz sempre o prefixo certo.
+A v1 continua disponível porque é o que o artefacto validado entrega e o que as
+figuras da dissertação mostram; `/v1/app` é uma morada estável para ela, não uma
+depreciação.
+
+O preço de versionar o build é que editar `frontend-v2/src/` (ou `frontend/src/`)
+obriga a correr `npm run build` e a commitar o `dist/` resultante — caso
+contrário a consola servida continua a ser a anterior. O `base` vem fixado no
+`vite.config.ts` de cada uma (`/app/` e `/v1/app/`), pelo que um `npm run build`
+normal produz sempre o prefixo certo.
 
 ## Licença e proveniência
 

@@ -1,12 +1,12 @@
 # CVM Console v2 (`frontend-v2/`)
 
 The v2 management console: TanStack Router + TanStack Query + Tailwind, served
-by `caspar serve` at **`/v2/app`**.
+by `caspar serve` at **`/app`** — it is the primary console.
 
-It runs side by side with the v1 console (`frontend/`, at `/app`), which is what
-the validated thesis artefact ships and what existing links and documents point
-at. Moving `/app` is a product decision, not a build detail — until it is taken,
-both are mounted.
+It runs side by side with the v1 console (`frontend/`), which moved to `/v1/app`
+when v2 was promoted. v1 is kept because it is what the validated thesis
+artefact ships and what the dissertation's figures show — `/v1/app` is a stable
+home for it, not a deprecation.
 
 The design brief this console was generated from is preserved verbatim in
 [`../PROMPT_LOVABLE.md`](../PROMPT_LOVABLE.md), including the non-negotiable
@@ -55,18 +55,19 @@ git add dist
 Without that, the served console stays on the previous build while the source
 says otherwise — a divergence nothing else catches.
 
-### `base` must stay `/v2/app/`
+### `base` must stay `/app/`
 
-`vite.config.ts` pins `base` to `process.env.CVM_BASE ?? "/v2/app/"`. A bundle
+`vite.config.ts` pins `base` to `process.env.CVM_BASE ?? "/app/"`. A bundle
 built for one prefix requests its assets from that prefix wherever it is
 actually mounted, so a `dist/` built with the default base produces a blank
 page and a 404 on every asset — **the one build mistake that survives a green
 `npm run build`**. Do not override `CVM_BASE` for a committed build; it exists
-for a future promotion of v2 to `/app`, which would set it once rather than
-editing the config, the router and the mount in three separate commits.
+for exactly this kind of move: promoting v2 to `/app` (and v1 to `/v1/app`) set
+it once rather than hand-editing the config, the router and the mount.
 
 `tests/test_serve_cmds.py` asserts both facts against the committed artefact:
-that `dist/index.html` exists, and that it references `/v2/app/assets/`.
+that `dist/index.html` exists, and that it references `/app/assets/` —
+and the same for v1's bundle at `/v1/app/assets/`.
 
 ## Docker
 

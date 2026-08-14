@@ -104,11 +104,18 @@ include = [
     "cli/", "config_assessment/", "tests/",
     "frontend/", "frontend-v2/",
     "data/ccss_canonical.sql",
-    "docs/", "*.md", "pyproject.toml",
+    "docs/", "pyproject.toml",
     "install-native.sh", "docker/",
+    # Named individually rather than `*.md`: the glob also swept in the v2
+    # planning documents (PLANO_V2, PRD, CONTRATO_API_V2, PROMPT_LOVABLE) and
+    # two stray directory READMEs. They are working notes, not something to
+    # publish to PyPI under this project's name.
+    "README.md", "README_PYPI.md", "INSTALL.md",
 ]
 exclude = [
     "**/node_modules/",
     "**/*.pdf",          # benchmark PDFs are build-time only; 78 MB for one
     "**/__pycache__/",
+    "vm/",               # notes on the local QEMU validation VM; links to
+                         # PLANO_V2.md, which is not published either
 ]

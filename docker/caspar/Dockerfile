@@ -90,19 +90,26 @@ RUN pip install --no-cache-dir click pydantic openpyxl requests pypdf pyyaml \
 
 # --- Application code -------------------------------------------------------
 COPY . .
-RUN pip install --no-cache-dir -e . --no-deps
 
 # The consoles' built assets, from stages 1 and 2. _mount_frontend (in
 # cli/commands/serve_cmds.py) looks for <repo>/frontend/dist and
 # <repo>/frontend-v2/dist and soft-fails if either is absent, so these two
-# paths are what make /app and /v2/app available in the image.
+# paths are what make /app and /v1/app available in the image.
 #
-# They land AFTER `COPY . .` on purpose: the repository now carries a committed
-# frontend-v2/dist, and copying the freshly built one over it is what keeps the
-# image reproducible from source rather than shipping whatever a developer
-# happened to have on disk.
+# They land AFTER `COPY . .` on purpose: the repository carries committed dists
+# and .dockerignore excludes them, so copying the freshly built ones here is
+# what keeps the image reproducible from source rather than shipping whatever a
+# developer happened to have on disk.
+#
+# And BEFORE the pip install below, which is not merely tidy: pyproject.toml
+# force-includes both dist directories into the wheel (a pip install has no
+# repository to get a console from), and hatchling raises FileNotFoundError on a
+# forced include that is missing — so installing while .dockerignore has kept
+# these paths empty fails the build outright.
 COPY --from=console /build/dist ./frontend/dist
 COPY --from=console-v2 /build/dist ./frontend-v2/dist
+
+RUN pip install --no-cache-dir -e . --no-deps
 
 # --- Canonical database: restored from SQL, never copied as a .db -----------
 # Baked at a fixed *seed* path. At runtime the entrypoint copies it into the

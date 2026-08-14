@@ -8,7 +8,7 @@
 #           console). Build-time commands (plugin add / build) need an
 #           external Ollama — see docker-compose.yml (profile "full").
 
-# --- Stage 1: build the CVM React console ----------------------------------
+# --- Stage 1: build the CVM React console (v1) ------------------------------
 # Built here rather than COPYing a local frontend/dist so the image is
 # reproducible from source alone — a developer's stale local build can never
 # end up baked into it. .dockerignore excludes frontend/dist for this reason.
@@ -23,7 +23,25 @@ COPY frontend/ ./
 RUN npm run build
 
 
-# --- Stage 2: the runtime image --------------------------------------------
+# --- Stage 2: build the CVM React console (v2) ------------------------------
+# Same reasoning as stage 1, and the same reason it is a separate stage: the
+# two consoles have independent dependency trees, so sharing one npm layer
+# would invalidate both caches on either one's lockfile change.
+#
+# `base` is pinned in vite.config.ts to /v2/app/, the prefix serve mounts this
+# at — nothing here may override CVM_BASE, or the image would ship a bundle
+# that 404s on every asset.
+FROM node:22-slim AS console-v2
+
+WORKDIR /build
+COPY frontend-v2/package.json frontend-v2/package-lock.json ./
+RUN npm ci
+
+COPY frontend-v2/ ./
+RUN npm run build
+
+
+# --- Stage 3: the runtime image --------------------------------------------
 FROM python:3.12-slim
 
 # System dependencies:
@@ -67,10 +85,17 @@ RUN pip install --no-cache-dir click pydantic openpyxl requests pypdf pyyaml \
 COPY . .
 RUN pip install --no-cache-dir -e . --no-deps
 
-# The console's built assets, from stage 1. _mount_frontend (in
-# cli/commands/serve_cmds.py) looks for <repo>/frontend/dist and soft-fails if
-# it is absent, so this path is what makes /app available in the image.
+# The consoles' built assets, from stages 1 and 2. _mount_frontend (in
+# cli/commands/serve_cmds.py) looks for <repo>/frontend/dist and
+# <repo>/frontend-v2/dist and soft-fails if either is absent, so these two
+# paths are what make /app and /v2/app available in the image.
+#
+# They land AFTER `COPY . .` on purpose: the repository now carries a committed
+# frontend-v2/dist, and copying the freshly built one over it is what keeps the
+# image reproducible from source rather than shipping whatever a developer
+# happened to have on disk.
 COPY --from=console /build/dist ./frontend/dist
+COPY --from=console-v2 /build/dist ./frontend-v2/dist
 
 # --- Canonical database: restored from SQL, never copied as a .db -----------
 # Baked at a fixed *seed* path. At runtime the entrypoint copies it into the

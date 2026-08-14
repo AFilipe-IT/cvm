@@ -8,7 +8,12 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-dist
+# dist IS committed, deliberately — see frontend-v2/README.md.
+# `caspar serve` mounts frontend-v2/dist at /v2/app, and neither supported
+# installation (pip install from a clone, or the Docker image) has Node. An
+# ignored dist means the v2 console simply does not exist for anyone who did
+# not build it themselves. v1's bundle is committed for the same reason.
+# The cost is that editing src/ obliges a rebuild + commit of dist/.
 dist-ssr
 .output
 .vinxi

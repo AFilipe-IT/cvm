@@ -3,11 +3,12 @@ tests/test_serve_cmds.py
 ------------------------
 `caspar serve` — what it tells the user about the CVM Console on startup.
 
-The console bundle (frontend/dist) is committed to the repository and rebuilt
-independently inside the Docker image, so in both supported installations it is
-present. The mount soft-fails when it isn't, which used to mean `serve` printed
-a console URL that answered 404 — the startup banner is the only place that
-absence can surface, so it is worth a test of its own.
+Both console bundles (frontend/dist, frontend-v2/dist) are committed to the
+repository and rebuilt independently inside the Docker image, so in every
+supported installation they are present. The mount soft-fails when one isn't,
+which used to mean `serve` printed a console URL that answered 404 — the startup
+banner is the only place that absence can surface, so it is worth a test of its
+own.
 """
 
 from __future__ import annotations
@@ -39,6 +40,27 @@ class TestConsoleDistIsShared:
         assert index.is_file(), (
             "frontend/dist/index.html is missing — native installs would have "
             "no web console. Rebuild with `npm run build` in frontend/."
+        )
+
+    def test_the_v2_bundle_is_committed_too(self):
+        """Same guarantee for v2, which is versioned for the same reason."""
+        index = sc._console_v2_dist() / "index.html"
+        assert index.is_file(), (
+            "frontend-v2/dist/index.html is missing — native installs would "
+            "have no v2 console. Rebuild with `npm run build` in frontend-v2/."
+        )
+
+    def test_the_v2_bundle_was_built_for_the_prefix_it_is_mounted_at(self):
+        """A bundle built for one prefix requests its assets from that prefix
+        wherever it is actually mounted, so a dist built with the default base
+        would load a blank page at /v2/app and 404 on every asset. This is the
+        one build mistake that survives a green `npm run build`, which is why
+        it is asserted against the committed artefact rather than trusted."""
+        html = (sc._console_v2_dist() / "index.html").read_text(encoding="utf-8")
+        assert '"/v2/app/assets/' in html, (
+            "frontend-v2/dist was built with the wrong base. Rebuild with "
+            "`npm run build` in frontend-v2/ (vite.config.ts pins base to "
+            "/v2/app/); do not override CVM_BASE for a committed build."
         )
 
 

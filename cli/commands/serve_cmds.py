@@ -25,8 +25,9 @@ def serve(ctx: click.Context, host: str, port: int, reload: bool) -> None:
     """Serve the REST API + CVM Console (same CVM Core as `caspar scan`).
 
     \b
-    Swagger UI:   http://127.0.0.1:2027/docs
-    CVM Console:  http://127.0.0.1:2027/app
+    Swagger UI:       http://127.0.0.1:2027/docs
+    CVM Console:      http://127.0.0.1:2027/app
+    CVM Console (v2): http://127.0.0.1:2027/v2/app
     """
     # As dependências do servidor são um extra opcional: quem só usa a CLI não
     # precisa de instalar fastapi/uvicorn. Sem esta captura, um `pip install -e .`
@@ -66,9 +67,9 @@ def serve(ctx: click.Context, host: str, port: int, reload: bool) -> None:
             "  CVM Console: unavailable — the frontend bundle is missing.\n"
             "               Reinstall (./install-native.sh) or use the Docker "
             "image, which ships it.", fg="yellow"))
-    # v2 is announced only when built. Its dist is not committed, so staying
-    # silent is the common case and printing a URL that 404s would be worse
-    # than saying nothing about a console the user may not be working on.
+    # v2's bundle is committed too, so this is normally present; the guard
+    # stays for the same reason v1's does — a cleaned dist must not produce a
+    # startup line pointing at a 404.
     if _console_v2_dist().is_dir():
         click.echo(click.style(f"  CVM Console (v2): http://{host}:{port}/v2/app",
                                fg="cyan"))
@@ -110,12 +111,11 @@ def _console_v2_dist() -> Path:
 def _mount_frontend(app) -> None:
     """Mount the built React consoles: v1 at /app, v2 at /v2/app.
 
-    v1's bundle is committed to the repository and the Docker image builds its
-    own, so in both supported installations it is there. Soft-failing covers
-    the remaining case — a source tree whose dist was cleaned — where the REST
-    API is still useful on its own; `serve` reports the absence on startup.
-    v2's dist is NOT committed, so its mount is absent far more often than
-    v1's; that is the same soft-fail, not a different policy.
+    Both bundles are committed to the repository and the Docker image builds
+    its own, so in every supported installation they are there — neither
+    console requires Node at install time. Soft-failing covers the remaining
+    case, a source tree whose dist was cleaned, where the REST API is still
+    useful on its own; `serve` reports the absence on startup.
 
     Neither prefix collides with anything already routed: /api/v1/*,
     /dashboard*, /docs, /redoc and /openapi.json are the taken ones, and a

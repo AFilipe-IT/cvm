@@ -237,9 +237,56 @@ def _meter_axis(width: int) -> str:
     return "".join(axis)
 
 
-def _risk_box_lines(score: float, severity: str) -> list[str]:
+def _not_assessed_box_lines() -> list[str]:
+    """The score panel for a target with an empty knowledge base.
+
+    Same geometry as the scored box — ten lines, identical width — because the
+    caller lays this out side by side with the summary and a different height
+    would break the alignment on the very scan that most needs reading.
+    """
+    inner_w = _RISK_BOX_W - 2
+    meter_w = inner_w - 4
+
+    top = "┌" + "─" * inner_w + "┐"
+    bot = "└" + "─" * inner_w + "┘"
+    blank = "│" + " " * inner_w + "│"
+
+    title = _boxed_center("CONFIGURATION VULNERABILITY SCORE", inner_w,
+                          fg="bright_cyan", bold=True)
+    score_line = _boxed_center("N/A", inner_w, fg="yellow", bold=True)
+    # An empty meter track, not a meter at 0: a filled-from-the-left bar reads
+    # as a measured low score even when the number beside it says N/A.
+    meter_line = "│  " + click.style("·" * meter_w, dim=True) + "  │"
+    axis_line = "│  " + click.style(_meter_axis(meter_w), dim=True) + "  │"
+    sev_line = _boxed_center("NOT ASSESSED", inner_w, bold=True, fg="yellow")
+
+    return [
+        click.style(top, dim=True),
+        title,
+        blank,
+        score_line,
+        blank,
+        meter_line,
+        axis_line,
+        blank,
+        sev_line,
+        click.style(bot, dim=True),
+    ]
+
+
+def _risk_box_lines(score: float, severity: str,
+                    assessed: bool = True) -> list[str]:
     """Right-hand score panel: title, big score, segmented meter, numbered
-    axis and the severity band."""
+    axis and the severity band.
+
+    `assessed=False` means the knowledge base held no rules for this target, so
+    no score could be computed. It renders "N/A" and "NOT ASSESSED" instead of
+    the 0.0/NONE the arithmetic would otherwise produce — a zero here is the
+    strongest all-clear the tool can give, and giving it for an unmeasured
+    system is precisely the false assurance the dimension model rejects.
+    """
+    if not assessed:
+        return _not_assessed_box_lines()
     color = _sev_color(score)
     inner_w = _RISK_BOX_W - 2
     meter_w = inner_w - 4
@@ -287,7 +334,13 @@ def _print_header(result, resolved, score: float) -> None:
     from config_assessment.core.ccss import severity_label as sl
 
     term_w = shutil.get_terminal_size(fallback=(100, 24)).columns
-    box = _risk_box_lines(score, sl(score))
+    # `rules_for_target == 0` means nothing could have been found, so the 0.0
+    # the aggregation returns is an artefact of an empty knowledge base rather
+    # than a clean system. Only an explicit 0 flips this: a missing key means an
+    # older manifest, where assuming "not assessed" would be the worse error.
+    manifest = getattr(result, "manifest", {}) or {}
+    assessed = manifest.get("rules_for_target") != 0
+    box = _risk_box_lines(score, sl(score), assessed=assessed)
 
     # Three distinct concepts that were previously collapsed into "Target":
     # the service running on the host, the plugin whose rules were applied, and
@@ -482,11 +535,37 @@ def _print_result(result, resolved=None, show_uncovered=False,
         click.echo()
 
     if not result.issues:
-        click.echo(click.style("  ✓  No issues detected.", fg="green", bold=True))
+        # Zero findings has two causes that look identical here and mean the
+        # opposite of each other: everything was checked and passed, or nothing
+        # was ever checked. A target whose knowledge base holds no rules cannot
+        # produce a finding, so "No issues detected" over an empty rule set
+        # reports a clean system purely because nothing looked at it — the false
+        # assurance this whole project exists to prevent, and the same
+        # not_assessed/clean distinction the console already honours.
+        manifest = getattr(result, "manifest", {}) or {}
+        rules = manifest.get("rules_for_target")
+        if rules == 0:
+            target = manifest.get("target", "this target")
+            click.echo(click.style(
+                "  !  Not assessed — no rules in the knowledge base.",
+                fg="yellow", bold=True,
+            ))
+            click.echo()
+            click.echo(
+                f"     The {target} plugin was detected and ran, but its knowledge\n"
+                f"     base is empty, so no finding was possible. This is NOT a\n"
+                f"     clean result. Load the rules, then scan again:\n"
+            )
+            click.echo(click.style(
+                f"       caspar plugin fetch {target} -o ./benchmarks", fg="cyan"))
+            click.echo(click.style(
+                f"       caspar plugin add {target} ./benchmarks/<ficheiro>", fg="cyan"))
+        else:
+            click.echo(click.style("  ✓  No issues detected.", fg="green", bold=True))
         click.echo()
         click.echo(click.style("  REPRODUCIBILITY", fg="bright_cyan", bold=True))
         click.echo()
-        _print_manifest_line(getattr(result, "manifest", {}))
+        _print_manifest_line(manifest)
         return
 
     # Contadores por severidade

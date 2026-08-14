@@ -188,6 +188,51 @@ class TestScans:
         assert r.status_code == 200
         assert len(r.json()) >= 1
 
+    def test_list_scans_reports_the_rule_count(self, client, dummy_config_file):
+        """A summary row must carry whether the target had any rules at all.
+
+        Score 0.0 / severity None / 0 issues is what an empty knowledge base
+        produces AND what a genuinely clean system produces. Told apart by the
+        summary fields alone they are identical, so a console rendering this
+        list would give a never-assessed target the strongest all-clear the tool
+        has. `rules_for_target` is the field that separates them.
+        """
+        client.post("/api/v1/scans", json={"input_path": dummy_config_file})
+        rows = client.get("/api/v1/scans").json()
+
+        assert rows, "expected at least the scan just created"
+        assert "rules_for_target" in rows[0]
+        # The fixture target has a populated knowledge base, so this is the
+        # assessed side of the distinction — a 0 here would mean the manifest
+        # never reached the row.
+        assert rows[0]["rules_for_target"] != 0
+
+    @pytest.mark.parametrize("stored", ["{}", "not json at all"])
+    def test_list_scans_survives_a_manifest_without_the_count(
+            self, client, dummy_config_file, db_path, stored):
+        """A manifest that cannot answer the question yields None, not a crash.
+
+        `manifest_json` is NOT NULL, so the real cases are a manifest written
+        before this key existed (`{}`) and a corrupted blob. Both must report
+        None — unknown, which callers read as assessed. Flipping unknown to
+        "not assessed" would fire the warning across healthy history, and a
+        warning that cries wolf stops being read. Neither may take the listing
+        down: one bad row cannot cost the operator every other scan.
+        """
+        import sqlite3
+
+        client.post("/api/v1/scans", json={"input_path": dummy_config_file})
+        conn = sqlite3.connect(db_path)
+        conn.execute("UPDATE scan_results SET manifest_json = ?", (stored,))
+        conn.commit()
+        conn.close()
+
+        r = client.get("/api/v1/scans")
+        assert r.status_code == 200
+        rows = r.json()
+        assert rows
+        assert all(row["rules_for_target"] is None for row in rows)
+
     def test_get_scan_chains(self, client, dummy_config_file):
         created = client.post("/api/v1/scans", json={"input_path": dummy_config_file}).json()
         r = client.get(f"/api/v1/scans/{created['scan_id']}/chains")

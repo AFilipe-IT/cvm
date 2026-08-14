@@ -1040,10 +1040,19 @@ class Database:
                    limit: int = 50, offset: int = 0) -> list[dict]:
         """Paginated scan listing (id + summary fields), newest first — the
         REST API's GET /scans. Filterable by target, input_path, host, and a
-        minimum global_temporal_score threshold."""
+        minimum global_temporal_score threshold.
+
+        Each row also carries `rules_for_target`, read out of the stored
+        manifest. Without it a scan of a target whose knowledge base is empty is
+        indistinguishable from a clean one — both are score 0.0, severity None,
+        0 issues — and a consumer would render the strongest possible all-clear
+        for a system nothing ever assessed. The CLI already refuses to do that;
+        this is the same signal, made available to every other consumer.
+        """
         sql = ("SELECT id, target_name, input_path, global_base_score, "
                "global_temporal_score, severity, total_directives, "
-               "total_issues, total_chains, host_id, timestamp FROM scan_results ")
+               "total_issues, total_chains, host_id, timestamp, manifest_json "
+               "FROM scan_results ")
         clauses: list[str] = []
         params: list = []
         if target_name:
@@ -1062,7 +1071,25 @@ class Database:
             sql += "WHERE " + " AND ".join(clauses) + " "
         sql += "ORDER BY timestamp DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
-        return [dict(r) for r in self._conn.execute(sql, params).fetchall()]
+
+        import json as _json
+        rows = []
+        for r in self._conn.execute(sql, params).fetchall():
+            row = dict(r)
+            # manifest_json itself stays out of the response: it is a large blob
+            # whose other fields (kb hash, versions) belong to GET /scans/{id}.
+            # Only the one field a summary consumer cannot do without is lifted.
+            raw = row.pop("manifest_json", None)
+            try:
+                row["rules_for_target"] = (_json.loads(raw) or {}).get(
+                    "rules_for_target") if raw else None
+            except (ValueError, TypeError):
+                # A malformed manifest must not take the listing down. None
+                # means "unknown", which callers already treat as assessed —
+                # the same reading as a pre-manifest scan.
+                row["rules_for_target"] = None
+            rows.append(row)
+        return rows
 
     # ------------------------------------------------------------------ #
     # Background jobs (REST API build/plugin_add) — Phase 2                #

@@ -45,16 +45,25 @@ class TestConsoleDistIsShared:
 class TestStartupBanner:
     """The banner must track reality, not assume the bundle is present."""
 
-    def _banner(self, monkeypatch, dist: Path) -> str:
+    def _banner(self, monkeypatch, dist: Path, v2_dist: Path | None = None) -> str:
         """Run serve's banner alone: uvicorn.run and create_app never fire.
 
         Invoking the command for real would bind a port and block, so the two
         heavy calls are stubbed and the DB check is satisfied by a real file.
+
+        BOTH console paths are redirected into the tmp tree. Leaving v2 pointing
+        at the real repository made these tests depend on whether someone had
+        run `npm run build` in frontend-v2 — they passed on a clean checkout and
+        failed once the bundle existed, which is a test reporting the developer's
+        working directory rather than the behaviour under test.
         """
         import click
         from click.testing import CliRunner
 
         monkeypatch.setattr(sc, "_console_dist", lambda: dist)
+        monkeypatch.setattr(
+            sc, "_console_v2_dist",
+            lambda: v2_dist if v2_dist is not None else dist.parent / "no-v2-here")
 
         lines: list[str] = []
         # serve() imports uvicorn inside the function body, so patching the
@@ -91,7 +100,31 @@ class TestStartupBanner:
         dist.parent.mkdir(parents=True)
         out = self._banner(monkeypatch, dist)
         assert "unavailable" in out
-        # No console URL to click: that link would have 404'd.
-        assert "/app" not in out
+        # No console URL to click: that link would have 404'd. Matched with the
+        # host prefix rather than as a bare "/app" substring, which /v2/app also
+        # contains — the loose form passed only because v2 happened to be absent.
+        assert ":2027/app" not in out
         # The API is unaffected and must still be advertised.
         assert "/docs" in out
+
+    def test_v2_is_announced_at_its_own_prefix_when_built(self, tmp_path, monkeypatch):
+        """Both consoles are served side by side, each at its own prefix."""
+        dist = tmp_path / "frontend" / "dist"
+        v2 = tmp_path / "frontend-v2" / "dist"
+        dist.mkdir(parents=True)
+        v2.mkdir(parents=True)
+        out = self._banner(monkeypatch, dist, v2_dist=v2)
+        assert ":2027/app" in out
+        assert ":2027/v2/app" in out
+
+    def test_v2_is_silent_when_not_built(self, tmp_path, monkeypatch):
+        """v2's dist is not committed, so its absence is the common case.
+
+        Announcing a URL that 404s would be worse than saying nothing about a
+        console the user may not be working on at all.
+        """
+        dist = tmp_path / "frontend" / "dist"
+        dist.mkdir(parents=True)
+        out = self._banner(monkeypatch, dist)   # v2 path deliberately absent
+        assert ":2027/app" in out
+        assert "/v2/app" not in out

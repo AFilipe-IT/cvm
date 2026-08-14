@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 
+from config_assessment.api.scoring_explain import explain_score
 from config_assessment.core.engines import scoring
 from config_assessment.core.engines.dimensions import dimension_of
 
@@ -155,6 +156,16 @@ def serialize_finding(m, *, in_chains: list[str] | None = None,
         "title": narrative.get("description") or getattr(m, "justification", "") or None,
         "impact": _impact(narrative),
         "recommendation": getattr(m, "recommendation", "") or None,
+        # The rule's own reason for existing, kept separate from `title` even
+        # when the two hold the same text: `title` is what the finding is
+        # called, `justification` is why the benchmark says it matters, and a
+        # console that shows a score has to be able to show the second without
+        # implying it is merely a heading.
+        "justification": getattr(m, "justification", "") or None,
+        # How the number was arrived at (scoring_explain.py). None when the
+        # finding predates the stored vector — the score still renders, the
+        # breakdown simply is not claimed.
+        "scoring": explain_score(m),
         "evidence": _evidence(m),
         "cves": list(getattr(m, "cves", []) or []),
         "references": _references(m),

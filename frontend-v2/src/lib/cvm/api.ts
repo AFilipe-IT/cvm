@@ -80,6 +80,12 @@ export interface FindingFilters {
   in_chain?: boolean | null;
   q?: string | null;
   host_id?: number | null;
+  // Restricts the list to one assessment. Without it the list spans the whole
+  // estate, which is right for triage and wrong straight after a scan: someone
+  // who just assessed one file is asking what THIS run found, and the estate
+  // view buries those few among thousands from configurations they never
+  // touched.
+  scan_id?: string | null;
   limit?: number;
   offset?: number;
 }
@@ -110,6 +116,7 @@ export function useFindings(
         in_chain: filters.in_chain,
         q: filters.q,
         host_id: filters.host_id,
+        scan_id: filters.scan_id,
         limit: filters.limit ?? 50,
         offset: filters.offset ?? 0,
       }),

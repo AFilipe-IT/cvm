@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowDown, ArrowRight, Layers, TrendingUp } from "lucide-react";
+import { ArrowDown, ArrowRight, ChevronDown, Layers, TrendingUp } from "lucide-react";
+import { useState } from "react";
 import type { Chain } from "@/lib/cvm/types";
 import { DIMENSION_META, severityForScore, severityVar } from "@/lib/cvm/ui";
 import { Panel, Score, SeverityBadge } from "./primitives";
@@ -74,8 +75,30 @@ function StepNode({
   );
 }
 
-export function ChainCard({ chain, compact = false }: { chain: Chain; compact?: boolean }) {
+export function ChainCard({
+  chain,
+  compact = false,
+  collapsible = false,
+  defaultOpen = false,
+}: {
+  chain: Chain;
+  compact?: boolean;
+  /**
+   * Render the body behind a disclosure. The dashboard shows several chains at
+   * once, and each one's narrative plus step grid runs to most of a screen —
+   * enough that the sections below the chains stop being discoverable. The
+   * header carries what ranking needs (score, amplification, active state), so
+   * collapsing loses nothing an operator scans for.
+   */
+  collapsible?: boolean;
+  defaultOpen?: boolean;
+}) {
   const maxStep = Math.max(...chain.steps.map((s) => s.score));
+  const [open, setOpen] = useState(defaultOpen);
+  // Only a collapsible card can be shut. Everywhere else `open` is ignored
+  // entirely, so the dedicated chains page keeps rendering in full.
+  const bodyVisible = !collapsible || open;
+
   return (
     <Panel className="overflow-hidden">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border px-5 py-4">
@@ -116,9 +139,25 @@ export function ChainCard({ chain, compact = false }: { chain: Chain; compact?: 
               worst step {maxStep.toFixed(1)} → {chain.score.toFixed(1)}
             </div>
           </div>
+          {collapsible ? (
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              aria-expanded={open}
+              // The chain id names what is being expanded, so a screen reader
+              // hears which of several chains the control belongs to.
+              aria-label={`${open ? "Hide" : "Show"} details for ${chain.title}`}
+              className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-panel-alt hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            >
+              <ChevronDown
+                className={`size-4 transition-transform ${open ? "rotate-180" : ""}`}
+              />
+            </button>
+          ) : null}
         </div>
       </div>
 
+      {bodyVisible ? (
       <div className="px-5 py-4">
         <p className="max-w-4xl text-sm leading-relaxed text-muted-foreground">{chain.narrative}</p>
 
@@ -169,6 +208,7 @@ export function ChainCard({ chain, compact = false }: { chain: Chain; compact?: 
           </div>
         )}
       </div>
+      ) : null}
     </Panel>
   );
 }

@@ -345,11 +345,15 @@ function ScanResultView({ result }: { result: ScanResponse }) {
         </div>
       ) : null}
 
+      {/* Scoped to this run. Without the id this opened on every finding in
+          the estate, so the handful this scan had just produced were buried
+          among thousands from configurations the user never touched. */}
       <Link
         to="/findings"
+        search={{ scan: result.scan_id }}
         className="inline-flex items-center gap-2 rounded-lg border border-border bg-panel px-3 py-2 text-sm font-medium hover:bg-panel-alt"
       >
-        Open in Findings
+        View this assessment's findings
       </Link>
     </div>
   );

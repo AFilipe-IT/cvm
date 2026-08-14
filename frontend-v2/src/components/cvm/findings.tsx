@@ -4,6 +4,7 @@ import type { Evidence, Finding } from "@/lib/cvm/types";
 import { DIMENSION_META, severityVar } from "@/lib/cvm/ui";
 import { useChains } from "@/lib/cvm/api";
 import { DimensionChip, Score, SeverityBadge, TechIcon, TimeStamp } from "./primitives";
+import { ScoringPanel } from "./ScoringPanel";
 
 export function EvidenceBlock({ evidence }: { evidence: Evidence }) {
   const head = (icon: React.ReactNode, label: string) => (
@@ -164,6 +165,22 @@ export function FindingDetail({
           <div className="num mt-0.5 font-mono text-xs text-sev-low">{finding.expected_value}</div>
         </div>
       </div>
+
+      {/* The benchmark's own reason for holding this to matter. Shown only
+          when it differs from the title: the serializer falls back to the
+          justification for `title` when there is no LLM narrative, and
+          printing the identical paragraph twice reads as a bug. */}
+      {finding.justification && finding.justification !== finding.title ? (
+        <div>
+          <div className="section-label">Why this is a finding</div>
+          <p className="mt-1 text-sm text-muted-foreground">{finding.justification}</p>
+        </div>
+      ) : null}
+
+      {/* Null for a finding stored before the vector was recorded. The score
+          above still stands; only its derivation is unavailable, and claiming
+          one would attribute an assessment nobody made. */}
+      {finding.scoring ? <ScoringPanel scoring={finding.scoring} /> : null}
 
       {/* Impact and recommendation come from the LLM narrative, which
           deterministic rules do not have. Saying the rule carries none is

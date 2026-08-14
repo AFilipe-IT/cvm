@@ -23,6 +23,7 @@ pytest.importorskip("fastapi", reason="API tests need the [api] extra "
 from fastapi.testclient import TestClient  # noqa: E402
 
 from config_assessment.api.findings import serialize_finding, severity_breakdown
+from config_assessment.api.scoring_explain import explain_score
 from config_assessment.core import runtime
 from config_assessment.core.db.database import Database
 from config_assessment.core.engines.scoring import base_score, temporal_score
@@ -353,3 +354,136 @@ class TestFindingsList:
 
     def test_an_unknown_host_is_a_404(self, client):
         assert client.get("/api/v1/findings?host_id=999").status_code == 404
+
+
+# ── scan-scoped listing ────────────────────────────────────────────────
+
+class TestScanScopedFindings:
+    """`?scan_id=` narrows the list to one assessment.
+
+    The estate-wide list is right for triage and wrong immediately after a
+    scan: someone who has just assessed one file is asking what THIS run
+    found, and the reference database holds 6323 findings to bury it under.
+    """
+
+    def test_a_scan_id_restricts_the_list_to_that_assessment(
+            self, scanned, dummy_config_file):
+        everything = scanned.get("/api/v1/findings").json()["total"]
+
+        # A second scan of the same input, so the estate holds more than the
+        # one run being asked about.
+        r = scanned.post("/api/v1/scans", json={"input_path": dummy_config_file})
+        scan_id = r.json()["scan_id"]
+
+        scoped = scanned.get(f"/api/v1/findings?scan_id={scan_id}").json()
+        assert scoped["total"] >= 1
+        assert scoped["total"] <= everything
+
+    def test_the_scoped_findings_all_belong_to_that_scan(
+            self, scanned, dummy_config_file):
+        r = scanned.post("/api/v1/scans", json={"input_path": dummy_config_file})
+        scan_id = r.json()["scan_id"]
+
+        detail = scanned.get(f"/api/v1/scans/{scan_id}").json()
+        expected = {i["directive"] for i in detail.get("issues", [])}
+
+        scoped = scanned.get(f"/api/v1/findings?scan_id={scan_id}").json()
+        assert {f["identifier"] for f in scoped["findings"]} == expected
+
+    def test_an_unknown_scan_is_a_404_not_an_empty_list(self, client):
+        """Same reasoning as the unknown-filter case, and the same reasoning
+        the renderer applies to an empty knowledge base: 'this assessment found
+        nothing' and 'there is no such assessment' must not look identical."""
+        r = client.get("/api/v1/findings?scan_id=00000000-dead-beef-0000-000000000000")
+        assert r.status_code == 404
+        assert r.json()["detail"]["error"]["code"] == "not_found"
+
+    def test_other_filters_still_apply_within_a_scan(
+            self, scanned, dummy_config_file):
+        r = scanned.post("/api/v1/scans", json={"input_path": dummy_config_file})
+        scan_id = r.json()["scan_id"]
+        both = scanned.get(
+            f"/api/v1/findings?scan_id={scan_id}&q=zzzznomatch").json()
+        assert both["total"] == 0
+
+
+# ── scoring rationale ──────────────────────────────────────────────────
+
+class TestScoringExplanation:
+    """A score with no derivation is an assertion; with one it is an argument.
+
+    The console cannot justify remediation work — nor can a reader audit the
+    methodology — from a bare number, so every finding carries the metrics that
+    produced it and the arithmetic that combined them.
+    """
+
+    def _misconfig(self, **kw):
+        defaults = dict(
+            target_name="dummy", directive="PermitRootLogin", bad_value="yes",
+            good_value="no", av="N", au="N", ac="L", c="P", i="C", a="N",
+            gel="H", grl="H")
+        m = Misconfiguration(**{**defaults, **kw})
+        m.base_score = base_score(m.av, m.au, m.ac, m.c, m.i, m.a)
+        m.temporal_score = temporal_score(m.base_score, m.gel, m.grl)
+        return m
+
+    def test_every_metric_is_named_and_weighted(self):
+        s = serialize_finding(self._misconfig())["scoring"]
+        codes = {m["code"] for group in ("exploitability", "impact", "temporal")
+                 for m in s[group]}
+        assert codes == {"AV", "Au", "AC", "C", "I", "A", "GEL", "GRL"}
+        for group in ("exploitability", "impact", "temporal"):
+            for m in s[group]:
+                assert m["label"], m["code"]
+                assert m["weight"] is not None, m["code"]
+                assert m["question"].endswith("?")
+
+    def test_the_weights_are_the_nistir_values_not_a_second_copy(self):
+        """Read from the scoring engine, so a change there cannot leave the
+        explanation quietly disagreeing with the score it explains."""
+        s = serialize_finding(self._misconfig())["scoring"]
+        weights = {m["code"]: m["weight"] for m in s["exploitability"]}
+        assert weights["AV"] == 1.000    # Network
+        assert weights["Au"] == 0.704    # None
+        assert weights["AC"] == 0.710    # Low
+
+    def test_the_arithmetic_reproduces_the_stored_score(self):
+        m = self._misconfig()
+        s = serialize_finding(m)["scoring"]
+        assert s["temporal_score"] == m.temporal_score
+        assert s["matches_stored"] is True
+        # The last step's value IS the temporal score: the panel's bottom line
+        # and the headline number must not be able to disagree.
+        assert s["steps"][-1]["value"] == m.temporal_score
+
+    def test_the_vector_matches_the_stored_metrics(self):
+        s = serialize_finding(self._misconfig())["scoring"]
+        assert s["vector"] == "AV:N AC:L Au:N C:P I:C A:N"
+
+    def test_a_finding_without_a_vector_claims_no_derivation(self):
+        """A row stored before the metrics were recorded. The score still
+        renders; inventing a vector would attribute an assessment nobody made.
+
+        Built as a bare object rather than a `Misconfiguration`: the model
+        requires the vector fields, so this state cannot be constructed through
+        it — which is itself why the guard stays cheap. It protects against rows
+        that predate the model, not against anything the model can produce now.
+        """
+        class _Legacy:
+            id = "legacy-1"
+            target_name = "dummy"
+            directive = "Legacy"
+            bad_value = "on"
+            good_value = "off"
+            temporal_score = 5.0
+            av = ac = au = c = i = a = None
+
+        assert explain_score(_Legacy()) is None
+
+    def test_the_justification_is_exposed_separately_from_the_title(self):
+        """`title` falls back to the justification when no LLM narrative
+        exists, so the console needs the field itself to tell a heading from
+        the benchmark's stated reason."""
+        m = self._misconfig(justification="Root login over SSH is reachable.")
+        body = serialize_finding(m)
+        assert body["justification"] == "Root login over SSH is reachable."

@@ -108,6 +108,44 @@ export type Evidence =
       fixed_version: string;
     };
 
+/** One CCSS metric, with the NISTIR 7502 §3.2 weight it contributes. */
+export interface ScoringMetric {
+  code: string;
+  value: string;
+  label: string;
+  // Null when the stored value is not one the engine recognises — a data
+  // problem the panel shows rather than hides behind a plausible default.
+  weight: number | null;
+  question: string;
+}
+
+/** One line of the arithmetic, with the numbers substituted in. */
+export interface ScoringStep {
+  label: string;
+  formula: string;
+  substituted: string;
+  value: number;
+}
+
+/**
+ * Why a finding scores what it scores. Null for a finding stored before the
+ * vector was recorded: the score still renders, the breakdown is simply not
+ * claimed rather than invented.
+ */
+export interface ScoringExplanation {
+  vector: string;
+  exploitability: ScoringMetric[];
+  impact: ScoringMetric[];
+  temporal: ScoringMetric[];
+  base_score: number;
+  temporal_score: number;
+  steps: ScoringStep[];
+  // False when the recomputed score disagrees with the stored one, which
+  // means the row is stale. Surfaced rather than silently preferring one.
+  matches_stored: boolean;
+  reference: string;
+}
+
 export interface Finding {
   id: string;
   dimension: DimensionId;
@@ -125,6 +163,11 @@ export interface Finding {
   title: string | null;
   impact: string | null;
   recommendation: string | null;
+  // The rule's own reason for existing, distinct from `title` even when the
+  // two carry the same text: one names the finding, the other says why the
+  // benchmark holds it to matter.
+  justification: string | null;
+  scoring: ScoringExplanation | null;
   // Null for a finding recovered from the knowledge base rather than observed
   // in a scan: it describes what WOULD be a finding, so there is no file that
   // was read and no socket that was seen.

@@ -14,6 +14,10 @@ const searchSchema = z.object({
   dimension: z.string().optional(),
   target: z.string().optional(),
   severity: z.string().optional(),
+  // Set by "Open in Findings" after a scan, so the page opens on that run's
+  // findings instead of the whole estate. Kept in the URL rather than in
+  // component state so the view survives a refresh and can be linked to.
+  scan: z.string().optional(),
 });
 
 export const Route = createFileRoute("/findings")({
@@ -60,6 +64,7 @@ function FindingsPage() {
     has_cve: hasCve ? true : null,
     in_chain: inChain ? true : null,
     q: debounced.trim() || null,
+    scan_id: search.scan ?? null,
     limit: 200,
   });
   const postureQuery = usePosture();
@@ -86,13 +91,42 @@ function FindingsPage() {
     <AppShell
       title="Findings"
       subtitle={
-        posture
-          ? `${posture.totals.findings_open} open across ` +
-            `${posture.coverage.dimensions_assessed} assessed dimension` +
-            `${posture.coverage.dimensions_assessed === 1 ? "" : "s"}`
-          : undefined
+        // The estate-wide count would be wrong while a single scan is in view:
+        // it describes findings the list is deliberately not showing.
+        search.scan
+          ? `${total} from one assessment`
+          : posture
+            ? `${posture.totals.findings_open} open across ` +
+              `${posture.coverage.dimensions_assessed} assessed dimension` +
+              `${posture.coverage.dimensions_assessed === 1 ? "" : "s"}`
+            : undefined
       }
     >
+      {/* A restricted list looks identical to a near-empty estate, so the
+          restriction says so and offers the way out. Without this, arriving
+          from a scan with 4 findings reads as "the whole system has 4". */}
+      {search.scan ? (
+        <Panel className="mb-4 flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <div className="text-xs text-muted-foreground">
+            Showing findings from a single assessment{" "}
+            <span className="num font-mono text-foreground">{search.scan.slice(0, 8)}</span> — not
+            the whole estate.
+          </div>
+          <button
+            type="button"
+            onClick={() =>
+              navigate({
+                search: (prev) => ({ ...prev, scan: undefined }),
+                replace: true,
+              })
+            }
+            className="rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-panel-alt"
+          >
+            Show all findings
+          </button>
+        </Panel>
+      ) : null}
+
       <Panel className="mb-4 px-4 py-3">
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[220px] flex-1">

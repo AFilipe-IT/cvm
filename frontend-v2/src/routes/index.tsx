@@ -306,7 +306,13 @@ function Overview() {
               />
             </Panel>
           ) : (
-            topChains.map((c) => <ChainCard key={c.id} chain={c} />)
+            // Collapsed here, expanded on /chains. The dashboard's job is to
+            // rank and route: the header already carries score, amplification
+            // and active state, and leaving every narrative and step grid open
+            // pushed the sections below the chains off the screen entirely.
+            topChains.map((c) => (
+              <ChainCard key={c.id} chain={c} collapsible defaultOpen={false} />
+            ))
           )}
         </div>
 

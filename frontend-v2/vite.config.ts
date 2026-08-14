@@ -21,12 +21,18 @@ import { defineConfig } from "vitest/config";
  * both supported installations — and running Node alongside the API would have
  * broken the zero-dependency install the project deliberately keeps.
  *
- * `base` must stay in step with the router's `basepath` and with the mount
- * prefix in cli/commands/serve_cmds.py: assets are requested at /app/assets/*,
- * and a mismatch shows up as a blank page rather than an error.
+ * `base` must stay in step with the mount prefix in
+ * cli/commands/serve_cmds.py: assets are requested at <base>/assets/*, and a
+ * mismatch shows up as a blank page rather than an error. The router reads this
+ * same value back through `import.meta.env.BASE_URL`, so the prefix is declared
+ * once here and never hand-copied.
+ *
+ * v2 is mounted at /v2/app while v1 keeps /app. `CVM_BASE` overrides it, which
+ * is what a future promotion of v2 to /app would set rather than editing this
+ * file and the router and the mount in three separate commits.
  */
 export default defineConfig({
-  base: "/app/",
+  base: process.env["CVM_BASE"] ?? "/v2/app/",
   plugins: [
     tanstackRouter({ target: "react", autoCodeSplitting: true }),
     react(),

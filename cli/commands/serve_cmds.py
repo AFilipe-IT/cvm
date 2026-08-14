@@ -66,6 +66,12 @@ def serve(ctx: click.Context, host: str, port: int, reload: bool) -> None:
             "  CVM Console: unavailable — the frontend bundle is missing.\n"
             "               Reinstall (./install-native.sh) or use the Docker "
             "image, which ships it.", fg="yellow"))
+    # v2 is announced only when built. Its dist is not committed, so staying
+    # silent is the common case and printing a URL that 404s would be worse
+    # than saying nothing about a console the user may not be working on.
+    if _console_v2_dist().is_dir():
+        click.echo(click.style(f"  CVM Console (v2): http://{host}:{port}/v2/app",
+                               fg="cyan"))
     click.echo()
 
     if reload:
@@ -89,17 +95,31 @@ def _console_dist() -> Path:
     return Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 
-def _mount_frontend(app) -> None:
-    """Mount the built CVM React console (frontend/dist) at /app, if present.
+def _console_v2_dist() -> Path:
+    """The v2 console's bundle.
 
-    The bundle is committed to the repository and the Docker image builds its
+    Served at its own prefix rather than replacing v1. v1 is what the
+    validated artefact ships and what every existing link and document points
+    at, so moving /app is a product decision rather than a build detail; the
+    two run side by side until that decision is taken. The prefix is also why
+    v2 must be built with `--base=/v2/app/` — a bundle built for one prefix
+    requests its assets from that prefix wherever it is actually mounted."""
+    return Path(__file__).resolve().parents[2] / "frontend-v2" / "dist"
+
+
+def _mount_frontend(app) -> None:
+    """Mount the built React consoles: v1 at /app, v2 at /v2/app.
+
+    v1's bundle is committed to the repository and the Docker image builds its
     own, so in both supported installations it is there. Soft-failing covers
     the remaining case — a source tree whose dist was cleaned — where the REST
-    API is still useful on its own; `serve` reports the absence on startup."""
-    dist_dir = _console_dist()
-    if not dist_dir.is_dir():
-        return
+    API is still useful on its own; `serve` reports the absence on startup.
+    v2's dist is NOT committed, so its mount is absent far more often than
+    v1's; that is the same soft-fail, not a different policy.
 
+    Neither prefix collides with anything already routed: /api/v1/*,
+    /dashboard*, /docs, /redoc and /openapi.json are the taken ones, and a
+    mount claims only its own subtree."""
     from fastapi.staticfiles import StaticFiles
     from starlette.exceptions import HTTPException as StarletteHTTPException
     from starlette.types import Scope
@@ -120,7 +140,16 @@ def _mount_frontend(app) -> None:
                     return await super().get_response("index.html", scope)
                 raise
 
-    app.mount("/app", SpaStaticFiles(directory=str(dist_dir), html=True), name="cvm-console")
+    # v2 first: Starlette matches mounts in registration order, and /app is a
+    # prefix of nothing here, but registering the more specific path first
+    # keeps that independent of how the prefixes later change.
+    if _console_v2_dist().is_dir():
+        app.mount("/v2/app",
+                  SpaStaticFiles(directory=str(_console_v2_dist()), html=True),
+                  name="cvm-console-v2")
+    if _console_dist().is_dir():
+        app.mount("/app", SpaStaticFiles(directory=str(_console_dist()), html=True),
+                  name="cvm-console")
 
 
 def _reload_app():

@@ -235,12 +235,16 @@ def run_build(
     ollama_url: str = "http://localhost:11434",
     dry_run: bool = False,
     stub: bool = False,
+    provider: str = "ollama",
 ) -> int:
     """
     Run the LLM build pipeline. Returns the number of entries processed.
+
+    `provider` selects the engine ('ollama', 'anthropic', 'openai'); `stub`
+    still wins over it, since a stub run is explicitly asking for no calls.
     """
     # Build LLM client
-    backend = "stub" if stub else "ollama"
+    backend = "stub" if stub else provider
     llm = make_client(backend=backend, model=model, base_url=ollama_url, fallback_to_stub=True)
 
     if stub:

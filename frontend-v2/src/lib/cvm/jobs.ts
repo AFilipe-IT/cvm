@@ -145,12 +145,43 @@ export function useJobLogs(
   return { lines, isLoading: query.isLoading };
 }
 
+export type BuildProvider = "ollama" | "anthropic" | "openai";
+
 export interface StartBuildParams {
   benchmark: string;
   target?: "apache-httpd" | "nginx";
   model?: string;
   ollama_url?: string;
   dry_run?: boolean;
+  provider?: BuildProvider;
+}
+
+/**
+ * One engine a build can run on.
+ *
+ * NOTE WHAT IS ABSENT: the key itself. The server reads it from its own
+ * environment and reports only whether the variable is set — a key that
+ * reached the browser would be in the page, in the query cache, and in
+ * anything that logs a response body.
+ */
+export interface BuildProviderInfo {
+  id: BuildProvider;
+  label: string;
+  default_model: string;
+  requires_key: boolean;
+  /** The env var to export; "" for a provider that needs no key. */
+  key_env: string;
+  key_present: boolean;
+}
+
+export function useBuildProviders(): UseQueryResult<BuildProviderInfo[]> {
+  return useQuery({
+    queryKey: ["builds", "providers"],
+    queryFn: () => apiGet<BuildProviderInfo[]>("/builds/providers"),
+    // Exporting a key requires restarting the server anyway, so this changes
+    // about as often as the process does.
+    staleTime: 30_000,
+  });
 }
 
 export function useStartBuild() {

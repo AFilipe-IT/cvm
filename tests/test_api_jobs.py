@@ -159,7 +159,8 @@ class TestBuildsRouter:
     def test_create_build_returns_job_id_and_completes(self, client, db_path, monkeypatch):
         calls = []
 
-        def fake_run_build_job(benchmark, model, ollama_url, target, dry_run, db_path, emit):
+        def fake_run_build_job(benchmark, model, ollama_url, target, dry_run,
+                                db_path, emit, provider="ollama"):
             calls.append(benchmark)
             emit("building...")
             return 7
@@ -178,6 +179,50 @@ class TestBuildsRouter:
 
         logs = client.get(f"/api/v1/jobs/{job_id}/logs").json()
         assert any(l["line"] == "building..." for l in logs)
+
+    def test_the_chosen_provider_reaches_the_build(self, client, db_path, monkeypatch):
+        """A provider picked in the console must actually select the engine —
+        otherwise the choice is decoration and every build runs on Ollama."""
+        seen = {}
+
+        def fake_run_build_job(benchmark, model, ollama_url, target, dry_run,
+                                db_path, emit, provider="ollama"):
+            seen["provider"] = provider
+            return 0
+
+        monkeypatch.setattr("cli.commands.build_cmds.run_build_job", fake_run_build_job)
+
+        r = client.post("/api/v1/builds", json={
+            "benchmark": "fake.pdf", "provider": "anthropic", "dry_run": True,
+        })
+        assert r.status_code == 202
+        _wait_for_terminal(db_path, r.json()["job_id"])
+        assert seen["provider"] == "anthropic"
+
+    def test_an_unknown_provider_is_refused_before_a_job_exists(self, client):
+        r = client.post("/api/v1/builds", json={
+            "benchmark": "fake.pdf", "provider": "definitely-not-a-provider",
+        })
+        assert r.status_code == 422
+
+    def test_providers_report_readiness_without_leaking_the_key(
+            self, client, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-secret-value")
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+        r = client.get("/api/v1/builds/providers")
+        assert r.status_code == 200
+        by_id = {p["id"]: p for p in r.json()}
+
+        assert by_id["anthropic"]["key_present"] is True
+        assert by_id["anthropic"]["key_env"] == "ANTHROPIC_API_KEY"
+        assert by_id["openai"]["key_present"] is False
+        # Ollama needs no key, so it must never render as "not configured".
+        assert by_id["ollama"]["requires_key"] is False
+        assert by_id["ollama"]["key_present"] is True
+
+        # The whole point: readiness travels, the secret does not.
+        assert "sk-ant-secret-value" not in r.text
 
     def test_list_builds_only_returns_build_kind(self, client, db_path):
         with Database(db_path) as db:

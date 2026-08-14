@@ -19,6 +19,24 @@ class BuildRequest(BaseModel):
     model: str = "qwen2.5:14b"
     ollama_url: str = "http://localhost:11434"
     dry_run: bool = False
+    # Which engine runs the build. There is deliberately NO api_key field: the
+    # hosted providers read their key from the server's environment. A key sent
+    # here would be stored verbatim in the job's params_json and echoed back by
+    # GET /jobs — see llm_client's module docstring.
+    provider: Literal["ollama", "anthropic", "openai"] = "ollama"
+
+
+class ProviderInfo(BaseModel):
+    """One build engine, as the console needs to render its choice."""
+    id: str
+    label: str
+    default_model: str
+    #: Whether this provider needs a key at all (Ollama does not).
+    requires_key: bool
+    #: The environment variable the key is read from, "" when none is needed.
+    key_env: str
+    #: Whether that variable is set in the server's environment. Never the key.
+    key_present: bool
 
 
 class PluginInstallRequest(BaseModel):

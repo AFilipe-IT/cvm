@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useState } from "react";
-import { History, PlayCircle } from "lucide-react";
+import { History, KeyRound, PlayCircle } from "lucide-react";
 
 import { AppShell } from "@/components/cvm/AppShell";
 import { JobConsole } from "@/components/cvm/JobConsole";
@@ -20,9 +20,11 @@ import {
   TimeStamp,
 } from "@/components/cvm/primitives";
 import {
+  useBuildProviders,
   useInvalidateAfterJob,
   useJobs,
   useStartBuild,
+  type BuildProvider,
   type JobStatus,
 } from "@/lib/cvm/jobs";
 
@@ -39,17 +41,54 @@ const STATUS_COLOR: Record<JobStatus, string> = {
   cancelled: "var(--text-muted)",
 };
 
+/**
+ * Whether the server holds a key for this engine.
+ *
+ * It reports the variable's name, never a value — the console has no way to
+ * read a key and no business holding one. Fixing a missing key means exporting
+ * it where the server runs and restarting it, which is why the hint names the
+ * variable rather than offering a field to type it into.
+ */
+function KeyStatus({ present, env }: { present: boolean; env: string }) {
+  return present ? (
+    <span className="inline-flex items-center gap-1.5">
+      <KeyRound className="size-3" style={{ color: "var(--sev-low)" }} />
+      <code className="font-mono">{env}</code> is set on the server.
+    </span>
+  ) : (
+    <span
+      className="inline-flex items-center gap-1.5"
+      style={{ color: "var(--sev-high)" }}
+    >
+      <KeyRound className="size-3" />
+      No key. Export <code className="font-mono">{env}</code> where the server
+      runs, then restart it.
+    </span>
+  );
+}
+
 function BuildPage() {
   const [benchmark, setBenchmark] = useState("");
   const [target, setTarget] = useState<"apache-httpd" | "nginx">("apache-httpd");
-  const [model, setModel] = useState("qwen2.5:14b");
+  const [provider, setProvider] = useState<BuildProvider>("ollama");
+  // Empty means "this provider's usual model", which the server resolves. A
+  // pre-filled Ollama tag would silently follow the operator to Claude, where
+  // it means nothing.
+  const [model, setModel] = useState("");
   const [ollamaUrl, setOllamaUrl] = useState("http://localhost:11434");
   const [dryRun, setDryRun] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | undefined>();
 
   const startBuild = useStartBuild();
+  const { data: providers } = useBuildProviders();
   const { data: jobs, isLoading, refetch } = useJobs("build");
   const invalidateAfterJob = useInvalidateAfterJob();
+
+  const chosen = providers?.find((p) => p.id === provider);
+  // A paid provider with no key on the server cannot possibly succeed, so the
+  // button says so instead of letting the operator start a job that dies on
+  // its first call — which, on a real benchmark, is minutes in.
+  const keyMissing = Boolean(chosen && !chosen.key_present);
 
   const handleFinished = useCallback(() => {
     invalidateAfterJob();
@@ -58,7 +97,14 @@ function BuildPage() {
 
   function handleStart() {
     startBuild.mutate(
-      { benchmark, target, model, ollama_url: ollamaUrl, dry_run: dryRun },
+      {
+        benchmark,
+        target,
+        provider,
+        ...(model.trim() ? { model: model.trim() } : {}),
+        ollama_url: ollamaUrl,
+        dry_run: dryRun,
+      },
       { onSuccess: (res) => setActiveJobId(res.job_id) },
     );
   }
@@ -66,7 +112,7 @@ function BuildPage() {
   return (
     <AppShell
       title="Build"
-      subtitle="Populate the knowledge base from a benchmark using a local LLM — the same pipeline as `caspar build`."
+      subtitle="Populate the knowledge base from a benchmark, using a local or paid model — the same pipeline as `caspar build`."
     >
       <div className="grid gap-4 xl:grid-cols-12">
         <Panel className="xl:col-span-5">
@@ -106,22 +152,57 @@ function BuildPage() {
                 </Select>
               </Field>
 
-              <Field label="LLM model" htmlFor="build-model">
-                <TextInput
-                  id="build-model"
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                />
+              <Field
+                label="Engine"
+                htmlFor="build-provider"
+                hint={
+                  chosen?.requires_key ? (
+                    <KeyStatus present={chosen.key_present} env={chosen.key_env} />
+                  ) : (
+                    "Runs on this machine. No key, no cost."
+                  )
+                }
+              >
+                <Select
+                  id="build-provider"
+                  value={provider}
+                  onChange={(e) => setProvider(e.target.value as BuildProvider)}
+                >
+                  {(providers ?? []).map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label}
+                    </option>
+                  ))}
+                </Select>
               </Field>
             </div>
 
-            <Field label="Ollama URL" htmlFor="build-ollama">
+            <Field
+              label="Model"
+              htmlFor="build-model"
+              hint={
+                chosen
+                  ? `Leave empty for ${chosen.default_model}.`
+                  : "Leave empty for this engine's usual model."
+              }
+            >
               <TextInput
-                id="build-ollama"
-                value={ollamaUrl}
-                onChange={(e) => setOllamaUrl(e.target.value)}
+                id="build-model"
+                value={model}
+                placeholder={chosen?.default_model ?? ""}
+                onChange={(e) => setModel(e.target.value)}
               />
             </Field>
+
+            {provider === "ollama" ? (
+              <Field label="Ollama URL" htmlFor="build-ollama">
+                <TextInput
+                  id="build-ollama"
+                  value={ollamaUrl}
+                  onChange={(e) => setOllamaUrl(e.target.value)}
+                />
+              </Field>
+            ) : null}
 
             <CheckRow checked={dryRun} onChange={setDryRun}>
               Dry run — extract and score without writing to the database
@@ -133,7 +214,7 @@ function BuildPage() {
               variant="primary"
               icon={<PlayCircle className="size-4" />}
               onClick={handleStart}
-              disabled={!benchmark || startBuild.isPending}
+              disabled={!benchmark || keyMissing || startBuild.isPending}
             >
               {startBuild.isPending ? "Starting…" : "Start build"}
             </Button>

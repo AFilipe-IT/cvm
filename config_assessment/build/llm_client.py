@@ -1,12 +1,20 @@
 """
 core/llm_client.py
 ------------------
-Abstracção sobre o LLM local (Ollama) e a Claude API.
+Abstracção sobre os motores de LLM usados no build: Ollama (local), Anthropic
+e OpenAI (pagos), e um stub para testes.
 
 Interface única: LLMClient.complete(prompt, system) -> str
 
-O caller não sabe se está a usar Ollama, Claude API, ou um stub de teste.
-A escolha é feita uma vez na construção do cliente.
+O caller não sabe qual está a ser usado. A escolha é feita uma vez, em
+make_client().
+
+CHAVES DE API: lêem-se do ambiente do processo (ANTHROPIC_API_KEY,
+OPENAI_API_KEY) e nunca de um argumento, de um pedido HTTP ou de um ficheiro
+de configuração. Uma chave que atravesse a API entraria em logs de pedidos,
+em `params_json` do job e no browser — três sítios onde não tem como sair
+depois. Quem corre o servidor exporta a variável; a consola só diz se está
+presente.
 
 Modelos Ollama recomendados para este pipeline (por ordem de preferência):
   - qwen2.5:14b     — melhor raciocínio estruturado, JSON fiável, cabe em 8GB VRAM com Q4
@@ -22,6 +30,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 import urllib.request
 import urllib.error
@@ -30,6 +39,20 @@ from dataclasses import dataclass
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+# The env var each hosted provider reads its key from. One place, so the CLI,
+# the API and the console all report the same thing about the same variable.
+API_KEY_ENV = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+}
+
+#: Defaults per provider, used when the caller names a provider but no model.
+DEFAULT_MODEL = {
+    "ollama": "qwen2.5:14b",
+    "anthropic": "claude-sonnet-4-5",
+    "openai": "gpt-4o",
+}
 
 
 # ------------------------------------------------------------------ #
@@ -160,6 +183,188 @@ class OllamaClient(LLMClient):
 
 
 # ------------------------------------------------------------------ #
+# Hosted clients (Anthropic, OpenAI)                                    #
+# ------------------------------------------------------------------ #
+
+class HostedClient(LLMClient):
+    """
+    A paid, hosted model — Anthropic or OpenAI — over stdlib HTTP.
+
+    The two APIs differ in three details and agree on everything else, so one
+    class parameterised by those details beats two near-identical ones. The
+    differences: the endpoint, how the system prompt travels (Anthropic takes a
+    top-level `system` field, OpenAI a first message with role=system), and
+    where the answer sits in the response.
+
+    A hosted build costs real money per rule, so a failure must be loud: unlike
+    the Ollama path there is NO fallback to the stub. Silently producing
+    synthetic metrics after the operator asked for Claude would poison the
+    knowledge base with plausible-looking rules that no model ever wrote.
+    """
+
+    def __init__(
+        self,
+        provider: str,
+        model: str,
+        *,
+        api_key: str,
+        timeout: int = 180,
+        temperature: float = 0.1,
+        max_retries: int = 3,
+        retry_delay: float = 2.0,
+    ) -> None:
+        if provider not in API_KEY_ENV:
+            raise ValueError(f"Unknown hosted provider: {provider!r}")
+        self.provider = provider
+        self.model = model
+        self._api_key = api_key
+        self.timeout = timeout
+        self.temperature = temperature
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+
+    def is_available(self) -> bool:
+        """Whether a key exists — not whether the provider answers.
+
+        Deliberately no network call: a request to check costs a token and
+        tells us nothing the first real call would not. What can be checked
+        cheaply, and is by far the common failure, is the missing key.
+        """
+        return bool(self._api_key)
+
+    def _request(self, prompt: str, system: str) -> tuple[str, dict, dict]:
+        """(url, headers, payload) for this provider."""
+        if self.provider == "anthropic":
+            return (
+                "https://api.anthropic.com/v1/messages",
+                {
+                    "content-type": "application/json",
+                    "x-api-key": self._api_key,
+                    "anthropic-version": "2023-06-01",
+                },
+                {
+                    "model": self.model,
+                    "max_tokens": 1024,
+                    "temperature": self.temperature,
+                    **({"system": system} if system else {}),
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+            )
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        return (
+            "https://api.openai.com/v1/chat/completions",
+            {
+                "content-type": "application/json",
+                "authorization": f"Bearer {self._api_key}",
+            },
+            {
+                "model": self.model,
+                "max_tokens": 1024,
+                "temperature": self.temperature,
+                "messages": messages,
+            },
+        )
+
+    def _extract(self, body: dict) -> str:
+        if self.provider == "anthropic":
+            # content is a list of blocks; the text ones are what we asked for.
+            return "".join(
+                b.get("text", "") for b in body.get("content", [])
+                if b.get("type") == "text"
+            )
+        return body["choices"][0]["message"]["content"]
+
+    def complete(self, prompt: str, system: str = "") -> str:
+        if not self._api_key:
+            raise RuntimeError(self.missing_key_message(self.provider))
+
+        url, headers, payload = self._request(prompt, system)
+        data = json.dumps(payload).encode("utf-8")
+
+        for attempt in range(self.max_retries):
+            try:
+                req = urllib.request.Request(
+                    url, data=data, headers=headers, method="POST")
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    return self._extract(json.loads(resp.read().decode("utf-8")))
+
+            except urllib.error.HTTPError as e:
+                # 429 and 529 are the providers asking us to slow down — those
+                # are worth retrying. Every other 4xx is our fault and retrying
+                # only burns time.
+                if e.code in (429, 529):
+                    self._retry_or_raise(e, attempt, wait_label="rate limited")
+                    continue
+                if 400 <= e.code < 500:
+                    raise RuntimeError(self._client_error(e)) from e
+                self._retry_or_raise(e, attempt, wait_label="server error")
+
+            except urllib.error.URLError as e:
+                self._retry_or_raise(e, attempt, wait_label="connection error")
+
+        raise RuntimeError(
+            f"{self.provider} unreachable after {self.max_retries} attempts")
+
+    def _client_error(self, e: urllib.error.HTTPError) -> str:
+        """A 4xx, said in terms of what the operator has to change.
+
+        The provider's own body is included but never the key, which is why
+        this builds the message instead of dumping the request.
+        """
+        env = API_KEY_ENV[self.provider]
+        if e.code in (401, 403):
+            return (f"{self.provider} rejected the API key (HTTP {e.code}). "
+                    f"Check the value of ${env}.")
+        if e.code == 404:
+            return (f"{self.provider} does not know the model "
+                    f"'{self.model}' (HTTP 404). Check the model name.")
+        detail = ""
+        try:
+            detail = e.read().decode("utf-8", "replace")[:300]
+        except Exception:
+            pass
+        return (f"{self.provider} rejected the request (HTTP {e.code}) for "
+                f"model '{self.model}'{': ' + detail if detail else ''}")
+
+    def _retry_or_raise(self, e: Exception, attempt: int, *, wait_label: str) -> None:
+        if attempt < self.max_retries - 1:
+            wait = self.retry_delay * (2 ** attempt)
+            logger.warning("%s request failed (%s, attempt %d/%d): %s — retrying in %.1fs",
+                           self.provider, wait_label, attempt + 1,
+                           self.max_retries, e, wait)
+            time.sleep(wait)
+        else:
+            raise RuntimeError(
+                f"{self.provider} unreachable after {self.max_retries} "
+                f"attempts: {e}") from e
+
+    @staticmethod
+    def missing_key_message(provider: str) -> str:
+        env = API_KEY_ENV[provider]
+        return (
+            f"No API key for {provider}. Export ${env} in the environment that "
+            f"runs the build:\n"
+            f"    export {env}=...\n"
+            f"CVM never accepts the key as an argument or over the API — it "
+            f"would end up in logs and in the job record."
+        )
+
+
+def api_key_present(provider: str) -> bool:
+    """Whether the process environment carries a key for this provider.
+
+    The only thing about a key that is safe to report anywhere — the console
+    calls this through GET /builds/providers so an operator can tell a missing
+    key from a wrong model name before spending an hour finding out.
+    """
+    env = API_KEY_ENV.get(provider)
+    return bool(env and os.environ.get(env, "").strip())
+
+
+# ------------------------------------------------------------------ #
 # Stub client (testes e modo offline)                                   #
 # ------------------------------------------------------------------ #
 
@@ -206,17 +411,29 @@ def make_client(
     Build an LLMClient.
 
     If backend='ollama' and Ollama is unreachable, falls back to StubLLMClient
-    when fallback_to_stub=True (useful for development without GPU).
+    when fallback_to_stub=True (useful for development without GPU). The hosted
+    backends never fall back: see HostedClient.
 
     Args:
-        backend:          'ollama' or 'stub'
-        model:            Ollama model tag (e.g. 'qwen2.5:14b', 'llama3.1:8b')
-        base_url:         Ollama server URL (default: http://localhost:11434)
+        backend:          'ollama', 'anthropic', 'openai' or 'stub'
+        model:            model name; falls back to DEFAULT_MODEL[backend]
+        base_url:         Ollama server URL (ignored by the hosted backends)
         fallback_to_stub: If True, returns StubLLMClient when Ollama is down
     """
     if backend == "stub":
         logger.info("LLM backend: stub (no model calls)")
         return StubLLMClient()
+
+    if backend in API_KEY_ENV:
+        api_key = os.environ.get(API_KEY_ENV[backend], "").strip()
+        if not api_key:
+            # Refused here rather than at the first call: a build that dies an
+            # hour in, having already written half a knowledge base, is a worse
+            # way to learn the key is missing.
+            raise RuntimeError(HostedClient.missing_key_message(backend))
+        chosen = model or DEFAULT_MODEL[backend]
+        logger.info("LLM backend: %s model=%s", backend, chosen)
+        return HostedClient(backend, chosen, api_key=api_key)
 
     client = OllamaClient(model=model, base_url=base_url)
 

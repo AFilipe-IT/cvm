@@ -35,19 +35,25 @@ pergunta "o que é que estava validado, e quando?".
 
 ## Estado actual
 
-**Nada da v2 está implementado ainda.** O que existe é o motor herdado do CASPAR,
-a documentação de planeamento, e a consola v2 desenhada mas ainda a consumir
-dados fictícios.
+**As seis fases do [`PLANO_V2.md`](PLANO_V2.md) estão implementadas e testadas**
+(2026-08-14). A suíte está em 1036 testes Python passados e 23 saltados; a
+consola v2 passa 23 testes próprios e typecheck limpo.
 
 | Componente | Estado |
 |---|---|
 | Motor v1 (12 plugins, scoring CCSS, cadeias) | herdado, funcional |
-| Consola v2 (`frontend-v2/`) | desenhada, sobre dados fictícios |
+| `plugin fetch` com fonte SSG (Fase 0) | **feito** — ver abaixo |
+| Inventário de hosts (Fase A) | **feito** — `core/inventory.py`, `hosts.uuid` persistente |
+| Scoring multidimensional (Fase B) | **feito** — `core/engines/dimensions.py::aggregate_posture` |
+| Alvo `ubuntu2204` e as três dimensões (Fase C) | **feito** — colectores `permissions.py` e `exposure.py` |
+| Consola v2 (`frontend-v2/`) ligada à API real (Fase D) | **feito** — sem dados fictícios |
+| Validação medida (Fase E) | **feito** — resultados em [`PLANO_V2.md`](PLANO_V2.md#fase-e--validação) |
 | Contrato de API v2 | especificado ([`CONTRATO_API_V2.md`](CONTRATO_API_V2.md)) |
-| Inventário de hosts | tabela existe e está vazia; por estender |
-| Scoring multidimensional | por implementar |
-| Dimensões de permissões e exposição | por implementar |
-| `plugin fetch` (Fase 0) | **feito** — ver abaixo |
+
+As três ressalvas que acompanham os números da Fase E (a concordância junta pelo
+objecto observado e não pelo número de secção; a sensibilidade exige anfitriões
+multidimensionais; a frota usada é sintética) estão escritas por extenso no
+plano, e pertencem à dissertação — não apenas ao repositório.
 
 ### Fase 0 — fonte de benchmarks reposta
 
@@ -141,12 +147,19 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
-A consola v2 ainda não está ligada ao backend; para a ver com os dados
-fictícios:
+A consola v2 consome a API real. Arranque o backend primeiro — o servidor de
+desenvolvimento encaminha `/api` para ele, e não existe middleware de CORS por
+opção:
 
 ```bash
-cd frontend-v2 && npm install && npm run dev
+caspar serve                                    # backend em :2027
+cd frontend-v2 && npm install && npm run dev    # consola em :5173
 ```
+
+Para a servir como em produção, `npm run build` produz `dist/`, que o
+`caspar serve` monta em `/app`. Ao contrário da consola v1, o `dist/` da v2 não
+é versionado — quem instalar a partir do repositório usa a v1, que traz o seu
+build commitado e por isso dispensa Node.
 
 ## Licença e proveniência
 

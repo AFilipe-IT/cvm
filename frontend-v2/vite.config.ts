@@ -47,9 +47,14 @@ export default defineConfig({
     // The API runs in a separate process during development. No CORS
     // middleware exists on the backend by design, so the dev server proxies
     // instead — same-origin in the browser, exactly as in production.
+    //
+    // 2027 is `caspar serve`'s default port (cli/commands/serve_cmds.py), not
+    // uvicorn's 8000. Pointing at 8000 fails as a connection refused on every
+    // API call while the page itself loads fine, which reads as a broken
+    // backend rather than a misconfigured proxy.
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:8000",
+        target: "http://127.0.0.1:2027",
         changeOrigin: true,
       },
     },

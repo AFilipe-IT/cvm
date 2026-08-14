@@ -125,3 +125,33 @@ defaults are browser-local; database and directory paths are displayed but not
 editable. Making server config writable over HTTP is a separate,
 security-relevant decision. `GET /settings` reports *whether* an API key is
 enforced, never its value.
+
+## `npm audit` findings, assessed (2026-08-14)
+
+`npm audit` reports 8 vulnerabilities here (2 critical, 1 high, 5 moderate).
+None is fixed by upgrading, and none is reachable in what ships. Recorded so
+the next reader does not re-derive it — or, worse, run `npm audit fix --force`
+and break a working console for nothing.
+
+**The 2 critical and the 1 high are `vitest`/`vite`/`@vitest/coverage-v8` —
+devDependencies.** They are the dev server and the test runner: path traversal
+in Vite's optimized-deps handler, arbitrary file read while the Vitest UI server
+is listening. Neither process runs in either supported installation, and neither
+package emits a byte into `dist/`, which is the only artifact `caspar serve`
+mounts. The v2 console (`frontend-v2/`) is already on vite 8 / vitest 4 and
+audits clean; this one stays on vite 5 because that upgrade is a rewrite of the
+build config, not a version bump.
+
+**The moderate one is `react-router-dom`, and it does ship.** Open redirect via
+a backslash in `<Link>`/`useNavigate` (GHSA-wrjc-x8rr-h8h6). It is not fixable
+inside 6.x: 6.30.4 is the last release of that branch and is still inside the
+vulnerable range, so the advisory's remedy means React Router 7 — a major, with
+breaking changes, against a console that works.
+
+It is also not exploitable here. The vulnerability needs a navigation target the
+attacker controls; every destination in this console is a literal written in the
+source (`navigate("/assessment")`, `navigate("/watch")`, …). No route target is
+built from a URL parameter, an API response, or user input. Grep `navigate(` and
+`to=` before adding one — **a route built from external data is what would make
+this advisory live**, and that is the condition to watch for, not the version
+number.

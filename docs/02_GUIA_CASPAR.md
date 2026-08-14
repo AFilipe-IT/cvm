@@ -447,13 +447,13 @@ A base de dados canónica que vem na imagem (semeada de `data/ccss_canonical.sql
 
 | Métrica | Valor |
 |---------|-------|
-| Plugins registados (`caspar targets`) | **12** (11 com regras próprias + `dummy` de teste) |
-| Misconfigurations catalogadas | **488** (com score CCSS, narrativa e recomendação) |
-| Attack chains | **27** (combinações que amplificam o risco) |
+| Plugins registados (`caspar targets`) | **12**, todos com regras próprias |
+| Misconfigurations catalogadas | **514** (com score CCSS, narrativa e recomendação) |
+| Attack chains | **32** (combinações que amplificam o risco) |
 | Version-exploits pré-computados | **19** (mapeamento versão → CVEs/exploits) |
 | Alvos disponíveis via `plugin fetch` | **43** (stigviewer.com) |
-| Versão da DB base (para o reseed) | **2** (`base_db_version` na tabela de metadados) |
-| Testes automatizados | **647** (a passar) |
+| Versão da DB base (para o reseed) | **4** (`base_db_version` na tabela de metadados) |
+| Testes automatizados | **1135** (a passar, 23 skipped) |
 
 Distribuição das 514 misconfigs pelos 12 targets com regras: **azure-iac 220 · docker 57 ·
 tomcat 49 · redis 36 · apache-httpd 35 · postgresql 26 · mysql 23 · nginx 18 · ubuntu 18 ·

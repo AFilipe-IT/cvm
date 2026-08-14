@@ -26,12 +26,22 @@ from pathlib import Path
 
 # Bump this whenever data/ccss_canonical.sql changes in a way that should reach
 # existing volumes (e.g. corrected justifications, new built-in misconfigs).
-BASE_DB_VERSION = 3
+# It must match the base_db_version written into the dump itself, otherwise a
+# refresh either never fires or fires on every start.
+BASE_DB_VERSION = 4
 
 # The targets shipped in the image. Anything else in a working DB was installed
 # by the user (plugin add / fetch) and must be preserved across a refresh.
+#
+# This list must stay in step with the targets in data/ccss_canonical.sql: a
+# built-in that is missing here is simply never refreshed, so a volume created
+# before it existed never receives it and the target reports "0 rules" forever.
+# That is exactly what happened to postgresql, whose plugin code shipped in
+# every install while its 26 rules reached nobody. Verified against the dump by
+# tests/test_reseed.py.
 BUILTIN_TARGETS = (
-    "apache-httpd", "docker", "mysql", "nginx", "redis", "ssh", "tomcat",
+    "apache-httpd", "azure-iac", "docker", "dockerfile", "kubernetes", "mysql",
+    "nginx", "postgresql", "redis", "ssh", "tomcat", "ubuntu",
 )
 
 
@@ -73,6 +83,22 @@ def refresh_builtins_if_stale(db_path: str | Path, seed_path: str | Path) -> boo
         placeholders = ",".join("?" for _ in BUILTIN_TARGETS)
         try:
             conn.execute("BEGIN")
+            # The targets row travels too. Refreshing only the rules left a new
+            # built-in invisible to `caspar targets` (database.py reads this
+            # table, not the rules) and without benchmark provenance in reports,
+            # which knowledge.py resolves from it.
+            #
+            # `id` is copied rather than reallocated because the rules rows
+            # below carry the seed's target_id verbatim (as they always have);
+            # letting the working DB keep a different id for the same name
+            # would point every refreshed rule at the wrong target.
+            tcols = [r[1] for r in conn.execute(
+                "PRAGMA table_info(targets)").fetchall()]
+            tcollist = ",".join(tcols)
+            conn.execute(
+                f"INSERT OR REPLACE INTO targets ({tcollist}) "
+                f"SELECT {tcollist} FROM seed.targets "
+                f"WHERE name IN ({placeholders})", BUILTIN_TARGETS)
             for table in ("misconfigurations", "attack_chains"):
                 conn.execute(
                     f"DELETE FROM {table} WHERE target_name IN ({placeholders})",

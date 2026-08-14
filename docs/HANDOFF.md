@@ -114,12 +114,17 @@ Docker; CASPAR vs **OpenSCAP** `--oscap` em Ubuntu OS). Ver §7.
   7502 §4, `test_nistir7502_examples.py`, adicionados 2026-07-14). CI em GitHub
   Actions (`.github/workflows/ci.yml`) corre a suite completa a cada push (é
   offline-safe).
-- **DB canónica** (`data/ccss_canonical.sql`, restaura para `ccss.db`): **488
-  regras / 27 chains** em **11 targets** (snapshot de 2026-07-31; a `ccss.db`
-  viva tem desde então um 12º target, `postgresql`, 26 regras/5 chains,
-  adicionado para medir §4.2 do 06_VALIDACAO.md — **ainda não propagado ao
-  snapshot canónico**, que continua a refletir os 11 targets originais até
-  ser regenerado deliberadamente):
+- **DB canónica** (`data/ccss_canonical.sql`, restaura para `ccss.db`): **514
+  regras / 32 chains** em **12 targets** (regenerada a 2026-08-14, `base_db_version=4`).
+  Até essa data o snapshot ficou nos 11 targets originais enquanto o
+  `postgresql` já vinha no código: o plugin viajava em todas as instalações e as
+  suas 26 regras em nenhuma, pelo que qualquer scan de PostgreSQL feito a partir
+  do Docker ou do PyPI dava `0 rules · NOT ASSESSED` e um `kb sha256` diferente
+  do repositório. Regenerar o dump é **obrigatório** depois de qualquer build que
+  escreva na `ccss.db` — ver §8 mais abaixo, e `tests/test_reseed.py`
+  (`TestBuiltinsMatchTheDump`), que passou a comparar o dump com o
+  `BUILTIN_TARGETS` do `reseed.py` precisamente para esta divergência não se
+  repetir em silêncio:
 
 | Target | Regras | Proveniência das regras |
 |---|---|---|
@@ -127,6 +132,7 @@ Docker; CASPAR vs **OpenSCAP** `--oscap` em Ubuntu OS). Ver §7.
 | nginx | 18 | LLM (revisão manual) |
 | ssh | 17 | LLM |
 | mysql | 23 | LLM |
+| **postgresql** | 26 | LLM (CIS PostgreSQL 13) |
 | redis | 36 | STIG |
 | tomcat | 49 | STIG |
 | docker | 57 | LLM (config runtime do daemon) |
@@ -134,6 +140,10 @@ Docker; CASPAR vs **OpenSCAP** `--oscap` em Ubuntu OS). Ver §7.
 | **kubernetes** | 10 | **curada** (CIS K8s §5) |
 | **dockerfile** | 5 | **curada** (CIS Docker) |
 | **azure-iac** | 220 | **LLM + mapeamento de vocabulário** (CIS Azure) |
+
+  ⚠️ Os números da **tese** (`docs/tese-docs/`) continuam nos **11 targets / 488
+  regras** da medição de 2026-07-09, e é assim que devem ficar: descrevem uma
+  medição concreta, não o estado actual do artefacto. Não são para "corrigir".
 
 - **3 proveniências de conhecimento**, todas a alimentar o MESMO scoring
   determinístico: **LLM-extraída** · **curada** · **promovida** (ciclo `promote`).
@@ -268,12 +278,26 @@ suppress, doctor, fix, **promote** (`--stats`).
 
 8. **Regenerar a DB canónica após um build.** Depois de `build_azure`/curated
    gravarem em `ccss.db`, **tens de** regenerar o dump para as regras viajarem:
+
    ```bash
-   # a caspar_meta é precisa (reseed) e o .dump só a inclui se existir na DB:
-   sqlite3 ccss.db "CREATE TABLE IF NOT EXISTS caspar_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL); INSERT OR REPLACE INTO caspar_meta VALUES('base_db_version','2');"
-   sqlite3 ccss.db .dump > data/ccss_canonical.sql
+   ./scripts/regen_canonical.sh          # ccss.db → data/ccss_canonical.sql + .sql.gz
+   pytest tests/test_reseed.py tests/test_init_cmds.py tests/test_doctor.py
    ```
-   Sem a `caspar_meta` no dump, `tests/test_reseed.py` parte. (Já mordeu.)
+
+   É um script e não um `sqlite3 .dump` à mão porque um dump cru leva também o
+   histórico de scans desta máquina e as tabelas de runtime (`hosts`, `jobs`,
+   `job_logs`, `watch_heartbeats` — criadas a pedido pelo `schema.sql`, não
+   pertencem ao conhecimento), e porque sem o carimbo `caspar_meta` o reseed
+   parte. O script trata dos três e regenera também o `.sql.gz` que o
+   `caspar init` usa no PyPI — regenerar um sem o outro é a divergência que o
+   `tests/test_init_cmds.py` apanha.
+
+   Se acrescentaste um **target novo**, além disto: mete o nome no
+   `BUILTIN_TARGETS` (`config_assessment/core/db/reseed.py`) e sobe o
+   `BASE_DB_VERSION`, senão o target nunca chega a um volume Docker que já
+   exista. O `tests/test_reseed.py::TestBuiltinsMatchTheDump` compara as duas
+   listas — foi acrescentado depois do `postgresql` ter passado 13 dias no
+   código sem nunca chegar a uma instalação.
 
 9. **PDFs de benchmark são material licenciado** — gitignored, NÃO viajam no
    git nem na imagem (excepto o NISTIR). Por isso 13 testes RAG do apache fazem

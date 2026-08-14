@@ -43,6 +43,34 @@ export function PanelHeader({
   );
 }
 
+/**
+ * A page-level band heading — the counterpart to PanelHeader one level up.
+ *
+ * A dashboard of equally-weighted panels gives the reader no grouping to hold
+ * on to; naming the bands is what turns a field of cards into two answers.
+ * Deliberately not a Panel: it labels the region, it is not itself content,
+ * so it carries no border or background of its own.
+ */
+export function SectionLabel({
+  title,
+  hint,
+  className,
+}: {
+  title: string;
+  hint?: string;
+  className?: string;
+}) {
+  return (
+    <div className={cn("mb-2 mt-5 flex items-baseline gap-2 first:mt-0", className)}>
+      <h2 className="section-label">{title}</h2>
+      {hint ? (
+        <p className="truncate text-[11px] normal-case text-muted-foreground">{hint}</p>
+      ) : null}
+      <span className="ml-1 h-px flex-1 bg-border" />
+    </div>
+  );
+}
+
 export function SeverityBadge({
   severity,
   className,
@@ -289,6 +317,37 @@ export function EmptyState({
 
 export function Skeleton({ className }: { className?: string }) {
   return <div className={cn("animate-pulse rounded-md bg-panel-alt", className)} />;
+}
+
+/**
+ * A short explanation of what a screen is for, above the controls.
+ *
+ * Some surfaces here are named after a domain concept the reader has no reason
+ * to already know — a tab labelled "Exceptions" says what the thing is called,
+ * never what it does or when to reach for it. This is where that sentence
+ * goes: one paragraph, stated once at the top, rather than a hint on every
+ * field trying to reconstruct the idea piecemeal.
+ */
+export function Explainer({
+  icon: Icon,
+  title,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex gap-3 rounded-lg border border-border bg-panel-alt/50 px-4 py-3">
+      <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{title}</p>
+        <div className="mt-1 space-y-1.5 text-xs leading-relaxed text-muted-foreground">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function KpiCard({

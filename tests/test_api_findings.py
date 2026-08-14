@@ -13,6 +13,7 @@ convincing-looking blank.
 
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 
@@ -487,3 +488,78 @@ class TestScoringExplanation:
         m = self._misconfig(justification="Root login over SSH is reachable.")
         body = serialize_finding(m)
         assert body["justification"] == "Root login over SSH is reachable."
+
+
+class TestPerMetricJustifications:
+    """WHY each metric holds its value, not just what the value costs.
+
+    The weight explains the arithmetic; only this explains the assignment. The
+    build pipeline writes these into the `narrative` JSON column, where the v1
+    console read them and the v2 one did not — the score was auditable as
+    arithmetic but not as judgement.
+    """
+
+    def _with_narrative(self, narrative):
+        m = Misconfiguration(
+            target_name="dummy", directive="ServerTokens", bad_value="Full",
+            good_value="Prod", av="N", au="N", ac="L", c="P", i="N", a="N",
+            gel="M", grl="H")
+        m.base_score = base_score(m.av, m.au, m.ac, m.c, m.i, m.a)
+        m.temporal_score = temporal_score(m.base_score, m.gel, m.grl)
+        m.narrative = narrative
+        return m
+
+    def _by_code(self, s):
+        return {m["code"]: m for group in ("exploitability", "impact", "temporal")
+                for m in s[group]}
+
+    def test_each_recorded_reason_reaches_its_own_metric(self):
+        m = self._with_narrative(json.dumps({"metric_justifications": {
+            "ac": "AC=L: a single unauthenticated HTTP request suffices.",
+            "c": "C=P: discloses the Apache version and module list.",
+        }}))
+        s = serialize_finding(m)["scoring"]
+        metrics = self._by_code(s)
+        assert s["has_justifications"] is True
+        assert metrics["AC"]["justification"].startswith("AC=L:")
+        assert metrics["C"]["justification"].startswith("C=P:")
+
+    def test_metrics_the_pipeline_did_not_write_stay_null(self):
+        """Partial coverage is the common case — the console must be able to
+        say "no reason recorded" for one metric while showing text for another,
+        rather than borrowing a neighbour's sentence."""
+        m = self._with_narrative(json.dumps({"metric_justifications": {
+            "ac": "AC=L: trivially reachable."}}))
+        metrics = self._by_code(serialize_finding(m)["scoring"])
+        assert metrics["AC"]["justification"] is not None
+        assert metrics["AV"]["justification"] is None
+        assert metrics["I"]["justification"] is None
+
+    @pytest.mark.parametrize("narrative", [
+        None, "", "{}", "{ not json at all", "[]",
+        json.dumps({"description": "no metric block here"}),
+        json.dumps({"metric_justifications": "not a dict"}),
+    ])
+    def test_a_rule_without_usable_reasons_still_scores(self, narrative):
+        """A malformed or absent narrative must not cost the reader the
+        arithmetic. One bad row taking down the whole detail view would be a
+        worse failure than the missing text it was trying to show.
+        """
+        s = serialize_finding(self._with_narrative(narrative))["scoring"]
+        assert s["has_justifications"] is False
+        assert all(m["justification"] is None for m in self._by_code(s).values())
+        # The part that does not depend on the narrative is unaffected.
+        assert s["temporal_score"] == pytest.approx(s["steps"][-1]["value"])
+
+    def test_non_string_reasons_are_dropped_not_rendered(self):
+        """Guards the console against printing "[object Object]" — the field is
+        typed as text downstream and nothing validates what the pipeline wrote.
+        """
+        m = self._with_narrative(json.dumps({"metric_justifications": {
+            "ac": {"nested": "object"}, "c": ["a", "list"], "i": 42,
+            "a": "A=N: availability is untouched."}}))
+        metrics = self._by_code(serialize_finding(m)["scoring"])
+        assert metrics["AC"]["justification"] is None
+        assert metrics["C"]["justification"] is None
+        assert metrics["I"]["justification"] is None
+        assert metrics["A"]["justification"] == "A=N: availability is untouched."

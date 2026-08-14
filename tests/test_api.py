@@ -233,6 +233,70 @@ class TestScans:
         assert rows
         assert all(row["rules_for_target"] is None for row in rows)
 
+    def test_list_scans_reports_the_total_in_a_header(
+            self, client, dummy_config_file):
+        """The count must describe every match, not the page.
+
+        A pager driven by the returned array alone cannot tell a full last page
+        from a boundary — "Next" would either stop a page early or land on an
+        empty one. `X-Total-Count` is what makes the window legible, so a page
+        of one out of three must still report three.
+        """
+        for _ in range(3):
+            client.post("/api/v1/scans", json={"input_path": dummy_config_file})
+
+        r = client.get("/api/v1/scans", params={"limit": 1})
+        assert r.status_code == 200
+        assert len(r.json()) == 1
+        assert r.headers["X-Total-Count"] == "3"
+
+    def test_total_count_is_computed_over_the_same_filters(
+            self, client, dummy_config_file):
+        """The count and the page must be filtered identically.
+
+        Counting over a wider set than the page it describes would report a
+        total the reader can never reach by paging — the pager would offer
+        pages that come back empty. Both sides read one WHERE clause
+        (`Database._scan_filter_sql`); this is the test that keeps them there.
+        """
+        client.post("/api/v1/scans", json={"input_path": dummy_config_file})
+
+        matching = client.get(
+            "/api/v1/scans", params={"input_path": dummy_config_file})
+        assert matching.headers["X-Total-Count"] == str(len(matching.json()))
+        assert int(matching.headers["X-Total-Count"]) >= 1
+
+        # A filter that matches nothing must count nothing, rather than falling
+        # back to the unfiltered total.
+        empty = client.get("/api/v1/scans", params={"input_path": "/no/such/path"})
+        assert empty.json() == []
+        assert empty.headers["X-Total-Count"] == "0"
+
+    def test_paging_reaches_every_scan_exactly_once(
+            self, client, dummy_config_file):
+        """Walking the offsets the way the console does must enumerate the set.
+
+        This is the behaviour the header exists to enable: page size 1 over
+        three scans yields three distinct ids and then stops, with no repeat
+        and no gap.
+        """
+        for _ in range(3):
+            client.post("/api/v1/scans", json={"input_path": dummy_config_file})
+
+        seen = []
+        for offset in range(0, 3):
+            rows = client.get(
+                "/api/v1/scans", params={"limit": 1, "offset": offset}).json()
+            seen.extend(row["id"] for row in rows)
+
+        assert len(seen) == 3
+        assert len(set(seen)) == 3
+        # One past the end is empty, not an error: the pager disables Next
+        # there, but a hand-edited URL must not produce a 500.
+        past_end = client.get("/api/v1/scans", params={"limit": 1, "offset": 3})
+        assert past_end.status_code == 200
+        assert past_end.json() == []
+
     def test_get_scan_chains(self, client, dummy_config_file):
         created = client.post("/api/v1/scans", json={"input_path": dummy_config_file}).json()
         r = client.get(f"/api/v1/scans/{created['scan_id']}/chains")

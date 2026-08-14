@@ -13,7 +13,9 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status,
+)
 
 from config_assessment.api.deps import get_db, require_api_key
 from config_assessment.api.schemas import ScanRequest, ScanResponse
@@ -138,6 +140,7 @@ def create_scan_from_upload(
 
 @router.get("")
 def list_scans(
+    response: Response,
     target: str | None = None,
     input_path: str | None = None,
     severity_min: float | None = None,
@@ -151,7 +154,14 @@ def list_scans(
     file (the series a trend is computed over), `severity_min` keeps only
     scans at or above a temporal score. Use GET /scans/{scan_id} for the
     findings themselves.
+
+    How many scans match the filters is returned in `X-Total-Count`. It rides
+    in a header rather than wrapping the array in an envelope because the body
+    shape is what the v1 console and the CLI-parity tests already consume; a
+    paging client otherwise cannot tell a full last page from a boundary.
     """
+    response.headers["X-Total-Count"] = str(db.count_scans(
+        target_name=target, input_path=input_path, severity_min=severity_min))
     return db.list_scans(
         target_name=target, input_path=input_path,
         severity_min=severity_min, limit=limit, offset=offset,

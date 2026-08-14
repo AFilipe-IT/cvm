@@ -19,7 +19,14 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 
-import { apiDelete, apiGet, apiPost, apiPostForm } from "./client";
+import {
+  apiDelete,
+  apiGet,
+  apiGetPaged,
+  apiPost,
+  apiPostForm,
+  type Paged,
+} from "./client";
 import type { Severity } from "./types";
 
 export type EnvProfile = "production" | "internal" | "dev";
@@ -96,6 +103,27 @@ export function useScanHistory(
   return useQuery({
     queryKey: ["scans", params],
     queryFn: () => apiGet<ScanListItem[]>("/scans", { ...params }),
+  });
+}
+
+/**
+ * The same history, plus how many assessments exist in total.
+ *
+ * Separate from `useScanHistory` because only a paged view needs the count: a
+ * caller that asks for "the last 5" and shows all of them would gain nothing
+ * from a total, and reading the header on every call would make the two
+ * queries' cache entries differ in shape for no reason.
+ *
+ * `placeholderData` keeps the current page on screen while the next one is
+ * fetched, so paging does not blank the table between clicks.
+ */
+export function useScanHistoryPaged(
+  params: ListScansParams = {},
+): UseQueryResult<Paged<ScanListItem>> {
+  return useQuery({
+    queryKey: ["scans", "paged", params],
+    queryFn: () => apiGetPaged<ScanListItem>("/scans", { ...params }),
+    placeholderData: (previous) => previous,
   });
 }
 

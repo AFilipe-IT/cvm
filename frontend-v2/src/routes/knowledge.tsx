@@ -470,8 +470,11 @@ function ChainsPanel({ target }: { target: string }) {
                       </span>
                     ) : null}
                   </div>
+                  {/* Step count, not the amplification multiplier: the factor
+                      has no defensible derivation and is hidden by design
+                      here as in the CLI. */}
                   <span className="num shrink-0 rounded-md border border-border px-2 py-0.5 text-[11px] font-semibold">
-                    ×{c.amplification.toFixed(2)}
+                    {c.misconfig_directives.length} steps
                   </span>
                 </div>
 

@@ -4,6 +4,7 @@ import { Search, SlidersHorizontal } from "lucide-react";
 import { z } from "zod";
 import { AppShell } from "@/components/cvm/AppShell";
 import { FindingDetail, FindingRow } from "@/components/cvm/findings";
+import { Pager } from "@/components/cvm/Pager";
 import { EmptyState, Panel, PanelHeader } from "@/components/cvm/primitives";
 import { ErrorState, LoadingState } from "@/components/cvm/states";
 import { useFindings, usePosture, useTargets } from "@/lib/cvm/api";
@@ -18,7 +19,14 @@ const searchSchema = z.object({
   // findings instead of the whole estate. Kept in the URL rather than in
   // component state so the view survives a refresh and can be linked to.
   scan: z.string().optional(),
+  // In the URL for the same reason: a page of results stays linkable and
+  // survives a refresh. Coerced because search params arrive as strings, and
+  // floored at zero so a hand-edited URL cannot ask for a negative offset.
+  offset: z.coerce.number().int().min(0).optional(),
 });
+
+/** Ten at a time — enough to compare, few enough to read without scrolling. */
+const PAGE_SIZE = 10;
 
 export const Route = createFileRoute("/findings")({
   validateSearch: searchSchema,
@@ -47,6 +55,9 @@ function FindingsPage() {
   const [inChain, setInChain] = useState(false);
   const [selected, setSelected] = useState<string | null>(search.q ?? null);
 
+  const setOffset = (next: number | undefined) =>
+    navigate({ search: (prev) => ({ ...prev, offset: next || undefined }), replace: true });
+
   // Debounced so a query does not leave for every keystroke. Filtering runs
   // on the server (the reference database holds 6323 findings, and shipping
   // them all to filter here would make `total` meaningless under pagination),
@@ -57,6 +68,17 @@ function FindingsPage() {
     return () => clearTimeout(timer);
   }, [text]);
 
+  // The two checkbox filters and the search box live in component state rather
+  // than the URL, so they cannot go through `setParam`. Narrowing the result
+  // set while parked on a later page would answer with an empty list that is
+  // indistinguishable from "nothing matches", so any change returns to page 1.
+  useEffect(() => {
+    setOffset(undefined);
+    // `setOffset` closes over `navigate`, which is stable per route; listing it
+    // would re-run this on every render and pin the reader to the first page.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debounced, hasCve, inChain]);
+
   const findingsQuery = useFindings({
     dimension: (search.dimension as DimensionId | undefined) ?? null,
     target: search.target ?? null,
@@ -65,7 +87,8 @@ function FindingsPage() {
     in_chain: inChain ? true : null,
     q: debounced.trim() || null,
     scan_id: search.scan ?? null,
-    limit: 200,
+    limit: PAGE_SIZE,
+    offset: search.offset ?? 0,
   });
   const postureQuery = usePosture();
   const targetsQuery = useTargets();
@@ -78,9 +101,12 @@ function FindingsPage() {
   // The API already returns findings sorted by score, highest first.
   const current = filtered.find((f) => f.id === selected) ?? filtered[0];
 
+  // Every filter change resets to the first page. Narrowing 6311 findings to
+  // 4 while sitting on offset 200 would otherwise answer with an empty list
+  // that looks exactly like "no findings match".
   const setParam = (key: "dimension" | "target" | "severity", value: string) =>
     navigate({
-      search: (prev) => ({ ...prev, [key]: value || undefined }),
+      search: (prev) => ({ ...prev, [key]: value || undefined, offset: undefined }),
       replace: true,
     });
 
@@ -190,13 +216,10 @@ function FindingsPage() {
       <div className="grid gap-4 xl:grid-cols-12">
         <Panel className="xl:col-span-7">
           <PanelHeader
-            title={
-              // `total` counts everything matching the filters, not the page,
-              // so it is the honest number next to "Results".
-              total > filtered.length
-                ? `Results · ${filtered.length} of ${total}`
-                : `Results · ${total}`
-            }
+            // `total` counts everything matching the filters, not the page.
+            // The window itself is spelled out by the pager at the foot of the
+            // panel, so the header carries the honest total alone.
+            title={`Results · ${total}`}
             hint="Sorted by risk, highest first"
           />
           {findingsQuery.isLoading ? (
@@ -236,6 +259,17 @@ function FindingsPage() {
               />
             </div>
           )}
+          <Pager
+            total={total}
+            offset={search.offset ?? 0}
+            pageSize={PAGE_SIZE}
+            onOffsetChange={setOffset}
+            noun="findings"
+            // `isFetching`, not `isLoading`: the query keeps the previous page
+            // on screen while the next one arrives, so there is no loading
+            // state to catch — only a refetch to dim.
+            busy={findingsQuery.isFetching}
+          />
         </Panel>
 
         <Panel className="h-fit xl:col-span-5">

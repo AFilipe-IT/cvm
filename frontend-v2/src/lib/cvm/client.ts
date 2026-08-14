@@ -203,10 +203,13 @@ export async function apiPostBlob(path: string, body?: unknown): Promise<Blob> {
   return await response.blob();
 }
 
-export async function apiGet<T>(
-  path: string,
-  params?: Record<string, string | number | boolean | null | undefined>,
-): Promise<T> {
+export type QueryParams = Record<
+  string,
+  string | number | boolean | null | undefined
+>;
+
+/** Shared by `apiGet` and `apiGetPaged` so the two build the same URL. */
+function buildUrl(path: string, params?: QueryParams): URL {
   const url = new URL(`${API_BASE}${path}`, window.location.origin);
   for (const [key, value] of Object.entries(params ?? {})) {
     // null/undefined mean "filter not applied". Serialising them would send
@@ -215,7 +218,10 @@ export async function apiGet<T>(
       url.searchParams.set(key, String(value));
     }
   }
+  return url;
+}
 
+async function getResponse(url: URL): Promise<Response> {
   let response: Response;
   try {
     response = await fetch(url, {
@@ -232,6 +238,45 @@ export async function apiGet<T>(
   }
 
   if (!response.ok) throw await errorFrom(response);
+  return response;
+}
 
+export async function apiGet<T>(path: string, params?: QueryParams): Promise<T> {
+  const response = await getResponse(buildUrl(path, params));
   return (await response.json()) as T;
+}
+
+/** An array response plus how many rows exist beyond the requested window. */
+export interface Paged<T> {
+  items: T[];
+  total: number;
+}
+
+/**
+ * A GET over an endpoint that answers with a bare array and reports the full
+ * count in `X-Total-Count`.
+ *
+ * A pager cannot work from the array alone: a page that comes back full is
+ * indistinguishable from the last page, so "Next" would either stop one page
+ * early or offer a page that turns out to be empty. The header carries the
+ * total without changing the body shape that the v1 console and the
+ * CLI-parity tests already consume.
+ *
+ * Readable without CORS configuration because the console is served from the
+ * same origin as the API — see the note at the top of this file. When the
+ * header is absent (an older server), the page length stands in for the total,
+ * which degrades to "no pager" rather than to a broken one.
+ */
+export async function apiGetPaged<T>(
+  path: string,
+  params?: QueryParams,
+): Promise<Paged<T>> {
+  const response = await getResponse(buildUrl(path, params));
+  const items = (await response.json()) as T[];
+  const header = response.headers.get("X-Total-Count");
+  const parsed = header === null ? Number.NaN : Number(header);
+  return {
+    items,
+    total: Number.isFinite(parsed) ? parsed : items.length,
+  };
 }

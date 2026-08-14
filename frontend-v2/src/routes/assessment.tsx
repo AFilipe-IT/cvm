@@ -1,8 +1,9 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { FileUp, GitCompareArrows, History, PlayCircle, Trash2 } from "lucide-react";
 
 import { AppShell } from "@/components/cvm/AppShell";
+import { Pager } from "@/components/cvm/Pager";
 import {
   Button,
   CheckRow,
@@ -28,6 +29,7 @@ import {
   useDeleteScan,
   useRunScan,
   useScanHistory,
+  useScanHistoryPaged,
   useUploadScan,
   type EnvProfile,
   type ScanResponse,
@@ -361,15 +363,39 @@ function ScanResultView({ result }: { result: ScanResponse }) {
 
 // ── history ────────────────────────────────────────────────────────────
 
+/** Ten at a time, matching the findings and chains lists. */
+const HISTORY_PAGE_SIZE = 10;
+
 function HistoryPanel() {
-  const { data: scans, isLoading } = useScanHistory({ limit: 50 });
+  const [offset, setOffset] = useState(0);
+  const navigate = useNavigate();
+  const { data, isLoading, isFetching } = useScanHistoryPaged({
+    limit: HISTORY_PAGE_SIZE,
+    offset,
+  });
   const deleteScan = useDeleteScan();
   const [confirming, setConfirming] = useState<string | null>(null);
+
+  const scans = data?.items;
+  const total = data?.total ?? 0;
+
+  const openScan = (id: string) => navigate({ to: "/findings", search: { scan: id } });
+
+  // Deleting the only row of the final page would leave the reader parked past
+  // the end: an empty table under a pager still reporting results. Stepping
+  // back one page is what they would otherwise have to do by hand.
+  const removeScan = (id: string) => {
+    deleteScan.mutate(id);
+    if (scans?.length === 1 && offset > 0) {
+      setOffset(Math.max(0, offset - HISTORY_PAGE_SIZE));
+    }
+  };
 
   return (
     <Panel>
       <PanelHeader
         title="Assessment history"
+        hint="Select an assessment to review its findings"
       />
       <div className="p-4">
         {isLoading ? (
@@ -392,7 +418,25 @@ function HistoryPanel() {
               </thead>
               <tbody>
                 {scans.map((s) => (
-                  <tr key={s.id} className="border-b border-border last:border-0">
+                  // The row itself opens the assessment. It carries button
+                  // semantics and a keyboard handler rather than wrapping each
+                  // cell in a link: an <a> inside every <td> would put six tab
+                  // stops on one row and still leave the gaps between cells
+                  // dead to the mouse.
+                  <tr
+                    key={s.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Open assessment of ${s.target_name}`}
+                    onClick={() => openScan(s.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openScan(s.id);
+                      }
+                    }}
+                    className="cursor-pointer border-b border-border last:border-0 hover:bg-panel-alt focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                  >
                     <td className="px-3 py-2.5">
                       <span className="flex items-center gap-2">
                         <TechIcon iconKey={s.target_name} size="sm" />
@@ -416,14 +460,22 @@ function HistoryPanel() {
                     <td className="px-3 py-2.5">
                       <TimeStamp iso={s.timestamp} />
                     </td>
-                    <td className="px-3 py-2.5 text-right">
+                    {/* Everything in this cell stops the click here: the row
+                        opens an assessment, and a delete that also navigated
+                        would take the reader to the findings of a scan they
+                        just removed. */}
+                    <td
+                      className="px-3 py-2.5 text-right"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
                       {/* Two-step, because this is irreversible and the row it
                           deletes also feeds the posture and the trends. */}
                       {confirming === s.id ? (
                         <span className="flex items-center justify-end gap-1.5">
                           <Button
                             onClick={() => {
-                              deleteScan.mutate(s.id);
+                              removeScan(s.id);
                               setConfirming(null);
                             }}
                             className="!px-2 !py-1 !text-xs"
@@ -460,6 +512,14 @@ function HistoryPanel() {
           />
         )}
       </div>
+      <Pager
+        total={total}
+        offset={offset}
+        pageSize={HISTORY_PAGE_SIZE}
+        onOffsetChange={setOffset}
+        noun="assessments"
+        busy={isFetching}
+      />
     </Panel>
   );
 }

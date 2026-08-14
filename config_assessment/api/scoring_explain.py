@@ -25,6 +25,8 @@ DERIVED, NEVER RE-IMPLEMENTED
 
 from __future__ import annotations
 
+import json
+
 from config_assessment.core.engines import scoring
 
 # Human names for the stored codes. The database holds "N"/"P"/"C" because
@@ -54,12 +56,18 @@ _QUESTIONS = {
 }
 
 
-def _metric(code: str, value: str, names: dict, weights: dict) -> dict:
+def _metric(code: str, value: str, names: dict, weights: dict,
+            justification: str | None = None) -> dict:
     """One row of the explanation.
 
     `weight` is None for a value the engine does not recognise. That is a data
     problem worth showing rather than hiding behind a plausible default: a
     finding stored with a bad metric is exactly what an auditor needs to see.
+
+    `justification` is the build pipeline's written reason for THIS value —
+    why AV is N and not L for this particular rule. The weight explains what
+    the value costs; only this explains why the value was chosen, which is the
+    part a reader has to accept on evidence rather than arithmetic.
     """
     return {
         "code": code,
@@ -67,7 +75,35 @@ def _metric(code: str, value: str, names: dict, weights: dict) -> dict:
         "label": names.get(value, value),
         "weight": weights.get(value),
         "question": _QUESTIONS[code],
+        "justification": justification or None,
     }
+
+
+def _metric_justifications(m) -> dict:
+    """The per-metric reasons recorded at build time, keyed by lowercase code.
+
+    They live inside the `narrative` JSON column rather than in columns of
+    their own, and only the LLM pipeline writes them — hand-curated and
+    pre-pipeline rules carry `"{}"`. A malformed blob returns nothing instead
+    of raising: one bad row must not take down the finding's whole detail
+    view, and the arithmetic below stands on its own regardless.
+    """
+    raw = getattr(m, "narrative", None)
+    if not raw:
+        return {}
+    if isinstance(raw, dict):          # already decoded upstream
+        parsed = raw
+    else:
+        try:
+            parsed = json.loads(raw)
+        except (ValueError, TypeError):
+            return {}
+    if not isinstance(parsed, dict):
+        return {}
+    found = parsed.get("metric_justifications")
+    if not isinstance(found, dict):
+        return {}
+    return {str(k).lower(): v for k, v in found.items() if isinstance(v, str)}
 
 
 def explain_score(m) -> dict | None:
@@ -90,19 +126,20 @@ def explain_score(m) -> dict | None:
     gel = getattr(m, "gel", None) or "ND"
     grl = getattr(m, "grl", None) or "ND"
 
+    j = _metric_justifications(m)
     exploitability = [
-        _metric("AV", av, _AV_NAMES, scoring._AV),
-        _metric("Au", au, _AU_NAMES, scoring._AU),
-        _metric("AC", ac, _AC_NAMES, scoring._AC),
+        _metric("AV", av, _AV_NAMES, scoring._AV, j.get("av")),
+        _metric("Au", au, _AU_NAMES, scoring._AU, j.get("au")),
+        _metric("AC", ac, _AC_NAMES, scoring._AC, j.get("ac")),
     ]
     impact = [
-        _metric("C", c, _CIA_NAMES, scoring._CIA),
-        _metric("I", i, _CIA_NAMES, scoring._CIA),
-        _metric("A", a, _CIA_NAMES, scoring._CIA),
+        _metric("C", c, _CIA_NAMES, scoring._CIA, j.get("c")),
+        _metric("I", i, _CIA_NAMES, scoring._CIA, j.get("i")),
+        _metric("A", a, _CIA_NAMES, scoring._CIA, j.get("a")),
     ]
     temporal = [
-        _metric("GEL", gel, _GEL_NAMES, scoring._GEL),
-        _metric("GRL", grl, _GRL_NAMES, scoring._GRL),
+        _metric("GEL", gel, _GEL_NAMES, scoring._GEL, j.get("gel")),
+        _metric("GRL", grl, _GRL_NAMES, scoring._GRL, j.get("grl")),
     ]
 
     # Recomputed from the engine rather than read off the row, so the panel
@@ -159,5 +196,9 @@ def explain_score(m) -> dict | None:
             },
         ],
         "matches_stored": stored is None or abs(temporal_value - stored) < 0.05,
+        # Lets the console distinguish "this rule records no reasons" from
+        # "the reasons exist but this view drops them" — the two look identical
+        # once every row's justification is null.
+        "has_justifications": bool(j),
         "reference": "NISTIR 7502 §3.2",
     }

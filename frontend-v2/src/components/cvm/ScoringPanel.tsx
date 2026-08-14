@@ -50,6 +50,39 @@ function MetricGroup({ title, metrics }: { title: string; metrics: ScoringMetric
   );
 }
 
+/**
+ * A metric with the recorded reason for its value.
+ *
+ * Full width rather than a cell in the three-column grid: these are sentences,
+ * and a paragraph in a third of a column wraps to a ribbon nobody reads. The
+ * question the metric answers is shown too — it is what lets a reader check
+ * the assigned value against their own system instead of taking it on faith.
+ */
+function JustifiedMetricRow({ metric }: { metric: ScoringMetric }) {
+  return (
+    <div className="py-2">
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="flex min-w-0 items-baseline gap-2">
+          <span className="num shrink-0 rounded bg-panel-alt px-1.5 py-0.5 text-[11px] font-semibold text-foreground">
+            {metric.code}:{metric.value}
+          </span>
+          <span className="truncate text-xs font-medium">{metric.label}</span>
+        </div>
+        <span className="num shrink-0 text-xs tabular-nums text-muted-foreground">
+          {metric.weight === null ? "—" : metric.weight.toFixed(3)}
+        </span>
+      </div>
+      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+        {metric.justification ?? (
+          <span className="italic">
+            No reason recorded for this metric. {metric.question}
+          </span>
+        )}
+      </p>
+    </div>
+  );
+}
+
 export function ScoringPanel({ scoring }: { scoring: ScoringExplanation }) {
   return (
     <div className="rounded-lg border border-border bg-panel-alt/40 p-4">
@@ -69,11 +102,26 @@ export function ScoringPanel({ scoring }: { scoring: ScoringExplanation }) {
         </div>
       ) : null}
 
-      <div className="mt-3 grid gap-4 sm:grid-cols-3">
-        <MetricGroup title="Exploitability" metrics={scoring.exploitability} />
-        <MetricGroup title="Impact" metrics={scoring.impact} />
-        <MetricGroup title="Temporal" metrics={scoring.temporal} />
-      </div>
+      {/* Two layouts for the same metrics. With recorded reasons each metric
+          needs a full-width paragraph, so they stack; without them there is
+          nothing but code, label and weight, and three compact columns read
+          faster than eight sparse rows. */}
+      {scoring.has_justifications ? (
+        <div className="mt-3">
+          <div className="section-label">Why each metric has this value</div>
+          <div className="mt-1 divide-y divide-border">
+            {[...scoring.exploitability, ...scoring.impact, ...scoring.temporal].map((m) => (
+              <JustifiedMetricRow key={m.code} metric={m} />
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 grid gap-4 sm:grid-cols-3">
+          <MetricGroup title="Exploitability" metrics={scoring.exploitability} />
+          <MetricGroup title="Impact" metrics={scoring.impact} />
+          <MetricGroup title="Temporal" metrics={scoring.temporal} />
+        </div>
+      )}
 
       <div className="section-label mt-5">Arithmetic</div>
       {/* Formulas overflow on narrow screens; they scroll inside their own

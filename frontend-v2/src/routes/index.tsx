@@ -18,6 +18,7 @@ import {
   Panel,
   PanelHeader,
   Score,
+  SectionLabel,
   SeverityBadge,
   Sparkline,
   TechIcon,
@@ -134,6 +135,17 @@ function Overview() {
         </Link>
       }
     >
+      {/* Two named bands, not one undifferentiated field of panels. The first
+          answers "how bad is it"; the second, "where, and what do I open".
+          Without the labels the reader has to infer which panels belong
+          together from their positions alone. */}
+      <SectionLabel
+        title="Posture"
+        hint={
+          `${p.coverage.dimensions_assessed} of ${p.coverage.dimensions_total} ` +
+          "dimensions assessed"
+        }
+      />
       <div className="grid gap-3 xl:grid-cols-12">
         {/* Overall */}
         <div className="space-y-3 xl:col-span-3">
@@ -285,37 +297,96 @@ function Overview() {
             </div>
           </Panel>
         </div>
+      </div>
 
-        {/* Chains */}
+      <SectionLabel title="Exposure" hint="what to open first" />
+      <div className="grid gap-3 xl:grid-cols-12">
+        {/* What was found and where it is escalating. One continuous column,
+            not two stacked bands — the chain cards collapse, and a full-width
+            band under them opened a hole the width of the page whenever they
+            did. Everything here flows instead. */}
         <div className="space-y-3 xl:col-span-8">
-          <div className="flex items-center justify-between">
-            <h2 className="section-label">Top attack chains</h2>
-            <Link to="/chains" className="text-[11px] font-medium text-accent hover:underline">
-              All {chains.length} chains
-            </Link>
-          </div>
-          {chainsQuery.isLoading ? (
-            <Panel>
-              <LoadingState label="Loading attack chains…" />
-            </Panel>
-          ) : topChains.length === 0 ? (
-            <Panel>
-              <EmptyState
-                title="No active attack chains"
-                icon={<Waypoints className="size-5" />}
-              />
-            </Panel>
-          ) : (
-            // Collapsed here, expanded on /chains. The dashboard's job is to
-            // rank and route: the header already carries score, amplification
-            // and active state, and leaving every narrative and step grid open
-            // pushed the sections below the chains off the screen entirely.
-            topChains.map((c) => (
-              <ChainCard key={c.id} chain={c} collapsible defaultOpen={false} />
-            ))
-          )}
+          <Panel>
+            <PanelHeader
+              title="Top attack chains"
+              hint="ordered by amplified score"
+              action={
+                <Link to="/chains" className="text-[11px] font-medium text-accent hover:underline">
+                  All {chains.length}
+                </Link>
+              }
+            />
+            <div className="space-y-2 px-3 py-2">
+              {chainsQuery.isLoading ? (
+                <LoadingState label="Loading attack chains…" />
+              ) : topChains.length === 0 ? (
+                <EmptyState
+                  title="No active attack chains"
+                  icon={<Waypoints className="size-5" />}
+                />
+              ) : (
+                // Collapsed here, expanded on /chains. The dashboard's job is to
+                // rank and route: the header already carries score, amplification
+                // and active state, and leaving every narrative and step grid open
+                // pushed the sections below the chains off the screen entirely.
+                topChains.map((c) => (
+                  <ChainCard key={c.id} chain={c} collapsible defaultOpen={false} flush />
+                ))
+              )}
+            </div>
+          </Panel>
+
+          <Panel>
+            <PanelHeader
+              title="Top findings by risk"
+              action={
+                <Link to="/findings" className="text-[11px] font-medium text-accent hover:underline">
+                  All findings
+                </Link>
+              }
+            />
+            <div className="scroll-x">
+              <table className="w-full min-w-[420px] text-left">
+                <tbody>
+                  {topFindings.map((f) => (
+                    <tr key={f.id} className="border-b border-border last:border-0">
+                      <td className="px-3 py-1.5">
+                        <div className="flex items-center gap-2.5">
+                          <TechIcon iconKey={f.target} size="sm" />
+                          <div className="min-w-0">
+                            <div className="truncate text-[13px] font-medium">
+                              {f.title ?? f.identifier}
+                            </div>
+                            <div className="truncate font-mono text-[11px] text-muted-foreground">
+                              {f.target_label} · {f.identifier}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-1.5 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Score value={f.score} severity={f.severity} size="sm" />
+                          <SeverityBadge severity={f.severity} />
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-1.5 text-right">
+                        <Link
+                          to="/findings"
+                          search={{ q: f.id }}
+                          className="text-[11px] font-medium text-accent hover:underline"
+                        >
+                          Detail
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
         </div>
 
+        {/* Estate: what is being watched and what happened lately. */}
         <div className="space-y-3 xl:col-span-4">
           <Panel>
             <PanelHeader
@@ -388,54 +459,6 @@ function Overview() {
             </ul>
           </Panel>
         </div>
-
-        {/* Top findings */}
-        <Panel className="xl:col-span-12">
-          <PanelHeader
-            title="Top findings by risk"
-            action={
-              <Link to="/findings" className="text-[11px] font-medium text-accent hover:underline">
-                All findings
-              </Link>
-            }
-          />
-          <div className="scroll-x">
-            <table className="w-full min-w-[720px] text-left">
-              <tbody>
-                {topFindings.map((f) => (
-                  <tr key={f.id} className="border-b border-border last:border-0">
-                    <td className="px-3 py-1.5">
-                      <div className="flex items-center gap-2.5">
-                        <TechIcon iconKey={f.target} size="sm" />
-                        <div className="min-w-0">
-                          <div className="truncate text-[13px] font-medium">{f.title ?? f.identifier}</div>
-                          <div className="truncate font-mono text-[11px] text-muted-foreground">
-                            {f.target_label} · {f.identifier}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Score value={f.score} severity={f.severity} size="sm" />
-                        <SeverityBadge severity={f.severity} />
-                      </div>
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 text-right">
-                      <Link
-                        to="/findings"
-                        search={{ q: f.id }}
-                        className="text-[11px] font-medium text-accent hover:underline"
-                      >
-                        Detail
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Panel>
       </div>
     </AppShell>
   );

@@ -19,7 +19,13 @@ import {
   Tabs,
   TextInput,
 } from "@/components/cvm/forms";
-import { EmptyState, Panel, PanelHeader, Skeleton } from "@/components/cvm/primitives";
+import {
+  EmptyState,
+  Explainer,
+  Panel,
+  PanelHeader,
+  Skeleton,
+} from "@/components/cvm/primitives";
 import { ScoreScaleLegend } from "@/components/cvm/dimensions";
 import { usePosture } from "@/lib/cvm/api";
 import { ErrorState, LoadingState } from "@/components/cvm/states";
@@ -40,7 +46,7 @@ export const Route = createFileRoute("/settings")({
       {
         name: "description",
         content:
-          "Console theme, API access, server configuration, accepted risks and remediation previews for CVM.",
+          "Console theme, API access, server configuration, finding exceptions and fix previews for CVM.",
       },
       { property: "og:title", content: "Settings — CVM" },
       { property: "og:description", content: "Theme, API endpoint and knowledge base manifest." },
@@ -66,8 +72,12 @@ function SettingsPage() {
           tabs={[
             { id: "console", label: "Console" },
             { id: "server", label: "Server" },
-            { id: "risks", label: "Accepted risks" },
-            { id: "remediate", label: "Remediation" },
+            // Named for what the operator does, not for the mechanism. The
+            // previous "Accepted risks" / "Remediation" read as report
+            // sections — nouns describing something to look at — when both are
+            // in fact actions taken against a config.
+            { id: "risks", label: "Exceptions" },
+            { id: "remediate", label: "Fix preview" },
           ]}
         />
 
@@ -374,7 +384,7 @@ function ServerTab() {
   );
 }
 
-// ── accepted risks ─────────────────────────────────────────────────────
+// ── exceptions (suppressions) ──────────────────────────────────────────
 
 function RisksTab() {
   const [file, setFile] = useState("");
@@ -388,7 +398,25 @@ function RisksTab() {
   const [badValue, setBadValue] = useState("");
 
   return (
-    <div className="grid gap-4 xl:grid-cols-12">
+    <div className="space-y-4">
+      <Explainer icon={ShieldOff} title="Exceptions — findings you have decided not to fix">
+        <p>
+          Some findings are real but will not be acted on: a compensating control
+          already covers them, or the setting is required by the application. An
+          exception hides such a finding from future assessments and from the
+          score, so the remaining findings are the ones that still need work.
+        </p>
+        <p>
+          Every exception records a written reason and lives in a file on the
+          server, which is what makes the decision auditable rather than
+          invisible. This is the same list <code className="font-mono">caspar
+          suppress</code> manages, and a scan applies it with{" "}
+          <code className="font-mono">--suppress-file</code>. Nothing is deleted:
+          removing an exception here brings the finding straight back.
+        </p>
+      </Explainer>
+
+      <div className="grid gap-4 xl:grid-cols-12">
       <Panel className="xl:col-span-5">
         <PanelHeader title="Suppression file" hint="A path on the server" />
         <div className="space-y-4 p-4">
@@ -528,17 +556,18 @@ function RisksTab() {
           ) : (
             <EmptyState
               icon={ShieldOff}
-              title="No accepted risks in this file"
+              title="No exceptions in this file"
               description="Every finding counts against the score."
             />
           )}
         </div>
       </Panel>
+      </div>
     </div>
   );
 }
 
-// ── remediation ────────────────────────────────────────────────────────
+// ── fix preview (caspar fix --dry-run) ─────────────────────────────────
 
 function RemediateTab() {
   const [inputPath, setInputPath] = useState("");
@@ -547,7 +576,24 @@ function RemediateTab() {
   const result = preview.data;
 
   return (
-    <div className="grid gap-4 xl:grid-cols-12">
+    <div className="space-y-4">
+      <Explainer icon={Wrench} title="Fix preview — the corrected config, before you apply it">
+        <p>
+          Name a configuration file on the server and CVM shows the exact lines it
+          would change to clear the findings it can fix automatically, alongside
+          the ones it cannot. Nothing is written: this is a preview, and the file
+          on disk is left untouched.
+        </p>
+        <p>
+          It is the read-only half of <code className="font-mono">caspar fix</code>.
+          Writing the change is deliberately left to the CLI —{" "}
+          <code className="font-mono">caspar fix --in-place</code> — so editing a
+          production config is always a decision taken on the host, never a button
+          in a browser.
+        </p>
+      </Explainer>
+
+      <div className="grid gap-4 xl:grid-cols-12">
       <Panel className="xl:col-span-4">
         <PanelHeader title="Preview remediation" hint="Nothing is written" />
         <div className="space-y-4 p-4">
@@ -644,6 +690,7 @@ function RemediateTab() {
           )}
         </div>
       </Panel>
+      </div>
     </div>
   );
 }

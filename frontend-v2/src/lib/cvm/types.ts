@@ -117,6 +117,10 @@ export interface ScoringMetric {
   // problem the panel shows rather than hides behind a plausible default.
   weight: number | null;
   question: string;
+  // The build pipeline's written reason for THIS value — why AV is N and not
+  // L for this rule. Null for hand-curated rules and anything built before the
+  // narrative pipeline: the weight is arithmetic, this is the argument.
+  justification: string | null;
 }
 
 /** One line of the arithmetic, with the numbers substituted in. */
@@ -143,6 +147,10 @@ export interface ScoringExplanation {
   // False when the recomputed score disagrees with the stored one, which
   // means the row is stale. Surfaced rather than silently preferring one.
   matches_stored: boolean;
+  // False when the rule records no written reasons at all, which is different
+  // from a view that drops them — the two look identical once every row's
+  // justification is null.
+  has_justifications: boolean;
   reference: string;
 }
 

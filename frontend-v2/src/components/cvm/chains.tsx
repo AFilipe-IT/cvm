@@ -80,6 +80,7 @@ export function ChainCard({
   compact = false,
   collapsible = false,
   defaultOpen = false,
+  flush = false,
 }: {
   chain: Chain;
   compact?: boolean;
@@ -92,6 +93,13 @@ export function ChainCard({
    */
   collapsible?: boolean;
   defaultOpen?: boolean;
+  /**
+   * Drop the card's own panel chrome, for when it already sits inside one.
+   * A `.panel` nested in a `.panel` paints the same background twice with an
+   * extra border between them, which is what makes a dashboard read as loose
+   * boxes rather than as a list inside a section.
+   */
+  flush?: boolean;
 }) {
   const maxStep = Math.max(...chain.steps.map((s) => s.score));
   const [open, setOpen] = useState(defaultOpen);
@@ -99,9 +107,20 @@ export function ChainCard({
   // entirely, so the dedicated chains page keeps rendering in full.
   const bodyVisible = !collapsible || open;
 
+  const Frame = flush ? "div" : Panel;
   return (
-    <Panel className="overflow-hidden">
-      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border px-5 py-4">
+    <Frame
+      className={
+        flush
+          ? "overflow-hidden rounded-lg border border-border bg-panel-alt/40"
+          : "overflow-hidden"
+      }
+    >
+      <div
+        className={`flex flex-wrap items-start justify-between gap-4 ${
+          flush ? "px-3.5 py-3" : "px-5 py-4"
+        } ${bodyVisible ? "border-b border-border" : ""}`}
+      >
         <div className="min-w-0 max-w-2xl">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-[11px] text-muted-foreground">{chain.id}</span>
@@ -122,21 +141,35 @@ export function ChainCard({
               </span>
             ) : null}
           </div>
-          <h3 className="mt-2 text-base font-semibold tracking-tight">{chain.title}</h3>
+          <h3
+            className={`mt-2 font-semibold tracking-tight ${
+              flush ? "text-sm" : "text-base"
+            }`}
+          >
+            {chain.title}
+          </h3>
         </div>
-        <div className="flex items-center gap-4">
+        <div className={`flex items-center ${flush ? "gap-3" : "gap-4"}`}>
           <div className="text-right">
             <div className="section-label">Chain risk</div>
             <div className="mt-1 flex items-center gap-2">
-              <Score value={chain.score} severity={chain.severity} size="lg" />
+              <Score value={chain.score} severity={chain.severity} size={flush ? "sm" : "lg"} />
               <SeverityBadge severity={chain.severity} />
             </div>
           </div>
+          {/* The amplification multiplier is deliberately not shown. It still
+              scales the stored chain score, but the factor itself has no
+              defensible derivation — the CLI has hidden it by design for the
+              same reason (cli/_output.py). Publishing "×1.50" invites a reader
+              to ask where 1.50 came from, and there is no answer that holds.
+              The step count is the honest structural fact in its place. */}
           <div className="hidden text-right sm:block">
-            <div className="section-label">Amplification</div>
-            <div className="num mt-1 text-lg font-semibold">×{chain.amplification.toFixed(2)}</div>
+            <div className="section-label">Composition</div>
+            <div className={`num mt-1 font-semibold ${flush ? "text-sm" : "text-lg"}`}>
+              {chain.steps.length} steps
+            </div>
             <div className="num text-[11px] text-muted-foreground">
-              worst step {maxStep.toFixed(1)} → {chain.score.toFixed(1)}
+              worst step {maxStep.toFixed(1)}
             </div>
           </div>
           {collapsible ? (
@@ -158,12 +191,12 @@ export function ChainCard({
       </div>
 
       {bodyVisible ? (
-      <div className="px-5 py-4">
+      <div className={flush ? "px-3.5 py-3" : "px-5 py-4"}>
         <p className="max-w-4xl text-sm leading-relaxed text-muted-foreground">{chain.narrative}</p>
 
         {!compact ? (
           <>
-            <div className="section-label mt-5">Composition · {chain.steps.length} steps</div>
+            <div className="section-label mt-5">Attack path</div>
             <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-stretch">
               {chain.steps.map((s, i) => (
                 <StepNode key={s.finding_id} step={s} last={i === chain.steps.length - 1} />
@@ -209,6 +242,6 @@ export function ChainCard({
         )}
       </div>
       ) : null}
-    </Panel>
+    </Frame>
   );
 }

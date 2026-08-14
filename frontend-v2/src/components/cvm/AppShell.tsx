@@ -227,6 +227,29 @@ export function AppShell({
   );
 }
 
+/**
+ * Authorship, distinct from provenance.
+ *
+ * Kept out of the provenance grid above deliberately: those fields all state
+ * something the numbers can be reproduced from, and a name among them would
+ * read as one more input to the score. It sits on its own rule instead, and
+ * shows on every page — including before an assessment is loaded, where the
+ * provenance grid has nothing to say.
+ */
+function AuthorCredit() {
+  return (
+    <div className="mt-3 border-t border-border pt-2.5">
+      <p className="text-[11px] text-muted-foreground">
+        <span className="text-foreground">Alberto Filipe</span>
+        <span className="mx-1.5 text-border">·</span>
+        Network Admin
+        <span className="mx-1.5 text-border">·</span>
+        Cisco CCNP
+      </p>
+    </div>
+  );
+}
+
 export function ProvenanceFooter() {
   const { data: p } = usePosture();
 
@@ -239,6 +262,7 @@ export function ProvenanceFooter() {
         <p className="text-[11px] text-muted-foreground">
           Provenance is shown once an assessment has been loaded.
         </p>
+        <AuthorCredit />
       </footer>
     );
   }
@@ -285,6 +309,7 @@ export function ProvenanceFooter() {
           version, KB hash, scoring model are all right there. Narrating them
           in a sentence below added a line to every page and said nothing the
           values did not. */}
+      <AuthorCredit />
     </footer>
   );
 }

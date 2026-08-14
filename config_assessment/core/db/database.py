@@ -1033,6 +1033,53 @@ class Database:
         self._conn.commit()
         return cur.rowcount > 0
 
+    @staticmethod
+    def _scan_filter_sql(target_name: str | None, input_path: str | None,
+                         severity_min: float | None,
+                         host_id: int | None) -> tuple[str, list]:
+        """The WHERE clause shared by `list_scans` and `count_scans`.
+
+        Written once because the two must agree: a count computed over
+        different filters than the page it describes would report a total the
+        reader can never reach by paging.
+
+        Returns the clause with a trailing space (or empty) and its parameters,
+        so callers can append ORDER BY / LIMIT directly.
+        """
+        clauses: list[str] = []
+        params: list = []
+        if target_name:
+            clauses.append("target_name = ?")
+            params.append(target_name)
+        if input_path:
+            clauses.append("input_path = ?")
+            params.append(input_path)
+        if severity_min is not None:
+            clauses.append("global_temporal_score >= ?")
+            params.append(severity_min)
+        if host_id is not None:
+            clauses.append("host_id = ?")
+            params.append(host_id)
+        if not clauses:
+            return "", params
+        return "WHERE " + " AND ".join(clauses) + " ", params
+
+    def count_scans(self, target_name: str | None = None,
+                    input_path: str | None = None,
+                    severity_min: float | None = None,
+                    host_id: int | None = None) -> int:
+        """How many scans match the filters, ignoring limit/offset.
+
+        A paged consumer cannot derive this from the page it holds: a full page
+        means "there may be more", and there is no way to tell the last page
+        from a boundary hit without asking. Exposed as a header on GET /scans.
+        """
+        where, params = self._scan_filter_sql(
+            target_name, input_path, severity_min, host_id)
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM scan_results " + where, params).fetchone()
+        return int(row[0]) if row else 0
+
     def list_scans(self, target_name: str | None = None,
                    input_path: str | None = None,
                    severity_min: float | None = None,
@@ -1053,24 +1100,10 @@ class Database:
                "global_temporal_score, severity, total_directives, "
                "total_issues, total_chains, host_id, timestamp, manifest_json "
                "FROM scan_results ")
-        clauses: list[str] = []
-        params: list = []
-        if target_name:
-            clauses.append("target_name = ?")
-            params.append(target_name)
-        if input_path:
-            clauses.append("input_path = ?")
-            params.append(input_path)
-        if severity_min is not None:
-            clauses.append("global_temporal_score >= ?")
-            params.append(severity_min)
-        if host_id is not None:
-            clauses.append("host_id = ?")
-            params.append(host_id)
-        if clauses:
-            sql += "WHERE " + " AND ".join(clauses) + " "
-        sql += "ORDER BY timestamp DESC LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
+        where, params = self._scan_filter_sql(
+            target_name, input_path, severity_min, host_id)
+        sql += where + "ORDER BY timestamp DESC LIMIT ? OFFSET ?"
+        params = [*params, limit, offset]
 
         import json as _json
         rows = []

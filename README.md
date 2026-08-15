@@ -9,15 +9,15 @@ ataque.**
 ## O que é este repositório, e o que não é
 
 Este repositório é a **versão 2** da implementação do CVM. Nasceu por fork do
-[CASPAR](https://github.com/AFilipe-IT/caspar) em 2026-08-13, no commit
-`2d8c4f5`, e herda o seu motor completo: doze plugins, 514 regras, 32 cadeias de
-ataque, extracção de conhecimento por LLM+RAG em build-time, scoring CCSS
-determinístico em runtime, e 846 testes.
+[CASPAR](https://github.com/AFilipe-IT/CASPAR) em 2026-08-13 e herda o seu motor
+completo: doze plugins, 514 regras, 32 cadeias de ataque, extracção de
+conhecimento por LLM+RAG em build-time, e scoring CCSS determinístico em
+runtime.
 
 **O CASPAR não foi arquivado nem substituído.** Continua a ser a implementação de
 referência que a dissertação descreve e cujos resultados a tese cita — 20/20 de
-concordância com o CCE nas entradas com score publicado, 96/96 de detecção, 846
-testes. Esse estado está congelado e é auditável ali.
+concordância com o CCE nas entradas com score publicado, 96/96 de detecção, 746
+testes passados. Esse estado está congelado e é auditável ali.
 
 A separação existe precisamente por isso: a v2 altera o modelo de scoring,
 estende `core/target.py` e introduz 225 regras ainda por validar. Misturar esse
@@ -36,7 +36,7 @@ pergunta "o que é que estava validado, e quando?".
 ## Estado actual
 
 **As seis fases do [`PLANO_V2.md`](PLANO_V2.md) estão implementadas e testadas**
-(2026-08-14). A suíte está em 1036 testes Python passados e 23 saltados; a
+(2026-08-14). A suíte está em 1146 testes Python passados e 23 saltados; a
 consola v2 passa 23 testes próprios e typecheck limpo.
 
 | Componente | Estado |

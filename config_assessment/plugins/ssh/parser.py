@@ -151,35 +151,43 @@ def parse_file(path: str, visited: set | None = None) -> list[Directive]:
     match_context = "global"
     match_applies = True
 
-    with open(abs_path, "r", encoding="utf-8", errors="replace") as fh:
-        for lineno, raw in enumerate(fh, start=1):
-            line = raw.strip()
-            if not line or line.startswith("#"):
-                continue
+    # An unreadable file is skipped, not fatal: sshd_config is world-readable but
+    # its Include targets often are not (cloud-init drops 0600 files into
+    # sshd_config.d/), so a non-root scan must degrade to the readable subset
+    # instead of dying. Same contract as the nginx and apache parsers.
+    try:
+        raw_text = Path(abs_path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
 
-            m_inc = _INCLUDE.match(line)
-            if m_inc and match_context == "global":
-                for inc in _resolve_includes(m_inc.group(1).strip(), base_dir):
-                    directives.extend(parse_file(inc, visited))
-                continue
+    for lineno, raw in enumerate(raw_text.splitlines(), start=1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
 
-            m_match = _MATCH.match(line)
-            if m_match:
-                criteria = m_match.group(1).strip()
-                match_context = f"Match({criteria})"
-                match_applies = _match_applies_worst_case(criteria)
-                continue
+        m_inc = _INCLUDE.match(line)
+        if m_inc and match_context == "global":
+            for inc in _resolve_includes(m_inc.group(1).strip(), base_dir):
+                directives.extend(parse_file(inc, visited))
+            continue
 
-            # Keyword value — split on the first run of whitespace.
-            parts = line.split(None, 1)
-            keyword = _canonical(parts[0])
-            value = parts[1].strip() if len(parts) > 1 else ""
-            directives.append(Directive(
-                name=keyword,
-                value=value,
-                context="global" if match_applies else match_context,
-                source_file=abs_path,
-                line_number=lineno,
-            ))
+        m_match = _MATCH.match(line)
+        if m_match:
+            criteria = m_match.group(1).strip()
+            match_context = f"Match({criteria})"
+            match_applies = _match_applies_worst_case(criteria)
+            continue
+
+        # Keyword value — split on the first run of whitespace.
+        parts = line.split(None, 1)
+        keyword = _canonical(parts[0])
+        value = parts[1].strip() if len(parts) > 1 else ""
+        directives.append(Directive(
+            name=keyword,
+            value=value,
+            context="global" if match_applies else match_context,
+            source_file=abs_path,
+            line_number=lineno,
+        ))
 
     return directives

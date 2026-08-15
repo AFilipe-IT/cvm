@@ -132,6 +132,37 @@ class TestParser:
         ds = parse_file(str(cfg))  # must not recurse forever
         assert any(d.name == "Port" for d in ds)
 
+    def test_unreadable_include_is_skipped_not_fatal(self, tmp_path):
+        # cloud-init writes 0600 fragments into sshd_config.d/, so a non-root
+        # scan of a world-readable sshd_config hits an unreadable Include. The
+        # readable subset must still come back instead of raising.
+        d = tmp_path / "sshd_config.d"
+        d.mkdir()
+        (d / "60-readable.conf").write_text("MaxAuthTries 3\n", encoding="utf-8")
+        locked = d / "50-cloud-init.conf"
+        locked.write_text("PasswordAuthentication yes\n", encoding="utf-8")
+        locked.chmod(0o000)
+
+        cfg = _write(tmp_path, "sshd_config",
+                     "Include sshd_config.d/*.conf\nPermitRootLogin no\n")
+        try:
+            ds = parse_file(str(cfg))          # must not raise PermissionError
+        finally:
+            locked.chmod(0o600)                # let tmp_path cleanup remove it
+
+        names = {x.name for x in ds}
+        assert "PermitRootLogin" in names      # from the top-level file
+        assert "MaxAuthTries" in names         # from the readable fragment
+        assert "PasswordAuthentication" not in names   # unreadable, skipped
+
+    def test_unreadable_top_level_returns_empty(self, tmp_path):
+        cfg = _write(tmp_path, "sshd_config", "PermitRootLogin no\n")
+        cfg.chmod(0o000)
+        try:
+            assert parse_file(str(cfg)) == []
+        finally:
+            cfg.chmod(0o600)
+
 
 class TestProfile:
     def test_no_listenaddress_is_network(self):

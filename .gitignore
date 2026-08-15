@@ -8,6 +8,14 @@ env/
 *.env
 .env.local
 .env.*.local
+# Credenciais de publicação. Um token do PyPI dá a quem o tiver o direito de
+# publicar sob este nome — e a versão publicada é o que os utilizadores
+# instalam. Um ficheiro destes já apareceu na árvore de trabalho por hábito
+# (`testpyapi`), a um `git add -A` de um repositório público.
+.pypirc
+*.pypirc
+testpyapi
+pypirc*
 
 # Base de dados (gerada em runtime)
 *.db

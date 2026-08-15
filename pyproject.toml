@@ -9,7 +9,7 @@ build-backend = "hatchling.build"
 # usual arrangement when a distribution name and its entry point differ
 # (`pip install ansible-core` gives you `ansible`).
 name = "cvm-caspar"
-version = "1.0.0"
+version = "1.1.0"
 description = "CVM — Configuration Vulnerability Meter: quantitative, reproducible security configuration scoring (CCSS / NISTIR 7502). CASPAR is the reference implementation."
 readme = "README_PYPI.md"
 # Apache-2.0 rather than MIT for the patent grant, and because it is what the

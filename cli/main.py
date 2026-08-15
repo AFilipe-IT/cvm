@@ -76,7 +76,24 @@ from cli.commands.init_cmds import init                                # noqa: E
 
 # ── CLI ────────────────────────────────────────────────────────────
 
+def _version() -> str:
+    """The single source of truth is CASPAR_VERSION, the same constant that
+    goes into every scan's reproducibility manifest — so what `--version`
+    prints is exactly what a result claims to have been produced by. Reading
+    it from importlib.metadata instead would report the *distribution*
+    version, which is absent in a source checkout and can drift from the
+    manifest after an editable install."""
+    from config_assessment.core.manifest import CASPAR_VERSION
+    return CASPAR_VERSION
+
+
 @click.group()
+# `caspar --version` is the first thing anyone types against an unfamiliar
+# CLI, and the first thing a bug report needs. `about` prints the same
+# version inside a wordmark; this is the one-line, greppable form that
+# scripts and issue templates can consume.
+@click.version_option(version=_version(), prog_name="caspar",
+                      message="%(prog)s %(version)s")
 @click.option("--db", default=lambda: os.environ.get("CASPAR_DB", "ccss.db"),
               show_default="ccss.db (or $CASPAR_DB)")
 @click.option("--verbose", "-v", is_flag=True)

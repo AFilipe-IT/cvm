@@ -121,6 +121,38 @@ class TestLicence:
                 f"carries it via license-files, the sdist does not.")
 
 
+class TestVersion:
+    """`caspar --version` and the version the package declares must agree.
+
+    They come from different places — pyproject.toml is read by the build
+    backend, CASPAR_VERSION by the CLI and by every scan's reproducibility
+    manifest — so nothing but a test stops a release bumping one and not the
+    other. A scan claiming `caspar 1.0.0` from a 1.1.0 install is a
+    reproducibility record that points at the wrong code.
+    """
+
+    def test_the_cli_reports_the_declared_version(self):
+        from click.testing import CliRunner
+
+        from cli.main import cli
+
+        r = CliRunner().invoke(cli, ["--version"])
+        assert r.exit_code == 0, r.output
+        assert r.output.strip() == f"caspar {self._declared()}"
+
+    def test_the_manifest_constant_matches_pyproject(self):
+        from config_assessment.core.manifest import CASPAR_VERSION
+
+        assert CASPAR_VERSION == self._declared(), (
+            f"pyproject.toml says {self._declared()} but the manifest stamps "
+            f"{CASPAR_VERSION} into every scan result")
+
+    @staticmethod
+    def _declared() -> str:
+        data = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
+        return data["project"]["version"]
+
+
 class TestDockerfileSatisfiesThem:
     """The image is the one install path where the dists are absent by design."""
 

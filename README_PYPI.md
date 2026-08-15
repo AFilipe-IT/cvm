@@ -46,18 +46,29 @@ pip install "cvm-caspar[api]"
 caspar serve                             # http://127.0.0.1:2027
 ```
 
-Both consoles ship built inside the package — no Node toolchain needed. The v2
-console answers at `/app`, v1 at `/v1/app`, and the REST API with its Swagger UI
-at `/api/v1` and `/docs`.
+**Both consoles are already installed by `pip install cvm-caspar`** — built, no
+Node toolchain, about 2 MB of the wheel. What `[api]` adds is the *server* that
+serves them: FastAPI and uvicorn. The v2 console answers at `/app`, v1 at
+`/v1/app`, and the REST API with its Swagger UI at `/api/v1` and `/docs`.
+
+The split keeps the default install pure-Python and small, which is what a CI
+runner wants — it scans and never opens a browser — and it means a security tool
+does not install an HTTP server on machines that never asked for one. Running
+`caspar serve` without the extra tells you exactly this and prints the command to
+fix it.
 
 ## Extras
 
-| Extra | For |
-|---|---|
-| *(none)* | the CLI: scan, report, diff, explain |
-| `[api]` | `caspar serve` — REST API + both web consoles |
-| `[publish]` | pushing results to an external endpoint |
-| `[dev]` | running the test suite |
+Written literally, inside square brackets, quoted so the shell does not treat
+them as a glob: `pip install "cvm-caspar[api]"`. Combine with a comma —
+`"cvm-caspar[api,publish]"`.
+
+| Extra | Adds | For |
+|---|---|---|
+| *(none)* | — | the CLI (scan, report, diff, explain) **and both web consoles** |
+| `[api]` | fastapi, uvicorn | the server behind `caspar serve` |
+| `[publish]` | requests | pushing results to an external endpoint |
+| `[dev]` | pytest, httpx | running the test suite |
 
 ## Build-time knowledge extraction
 

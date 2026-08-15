@@ -34,7 +34,7 @@ import platform
 import sqlite3
 from pathlib import Path
 
-CASPAR_VERSION = "1.1.0"
+CASPAR_VERSION = "1.1.1"
 
 # (table, primary-key columns to order by, columns to include in the hash —
 # excludes created_at/updated_at/fetched_at bookkeeping timestamps, which

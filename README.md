@@ -138,9 +138,39 @@ que é também o que dispensa agentes e credenciais SSH de terceiros: ler modos 
 ficheiros e sockets à escuta é a mesma posição de execução com que já se lêem
 ficheiros de configuração.
 
-## Instalação
+## Arranque rápido
 
-O processo é o do CASPAR e não mudou — ver [`INSTALL.md`](INSTALL.md).
+Publicado no PyPI como [`cvm-caspar`](https://pypi.org/project/cvm-caspar/) — o
+comando instalado continua a chamar-se `caspar`:
+
+```bash
+pip install cvm-caspar
+caspar init                                    # uma vez, só em instalações por pip
+caspar demo                                    # escreve caspar-demo/
+caspar scan caspar-demo/apache-vulnerable.conf # 8.7/10 HIGH, 4 cadeias
+```
+
+O `caspar init` existe porque o wheel transporta o dump canónico da base de
+conhecimento, não a base construída; restaurá-lo dá as mesmas 514 regras que a
+imagem Docker e o instalador do repositório trazem, para que os scores sejam
+comparáveis nas três vias. Depois, `caspar scan caspar-demo/apache-hardened.conf`
+mostra o score a descer sobre a mesma directiva.
+
+Para a consola web:
+
+```bash
+pip install "cvm-caspar[api]"                  # acrescenta o servidor
+caspar serve                                   # :2027 → /app, /v1/app, /docs
+```
+
+As duas consolas **já vêm instaladas** no `pip install cvm-caspar` — o `dist/`
+está versionado e vai dentro do wheel. O extra `[api]` acrescenta o FastAPI e o
+uvicorn, ou seja o servidor que as serve, não as consolas.
+
+## Instalação a partir do repositório
+
+Para desenvolver, ou para reproduzir o build. O processo é o do CASPAR e não
+mudou — ver [`INSTALL.md`](INSTALL.md).
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
@@ -156,10 +186,9 @@ caspar serve                                    # backend em :2027
 cd frontend-v2 && npm install && npm run dev    # consola em :5173
 ```
 
-Em produção não é preciso Node: o `dist/` das duas consolas está versionado, e
-o `caspar serve` monta **a v2 em `/app`** — é a consola principal — e a v1 em
-`/v1/app`. Quem instalar a partir do repositório tem as duas a funcionar sem
-instalar nada de JavaScript.
+O servidor de desenvolvimento só é preciso para *editar* a consola. Para a usar
+basta o `caspar serve`, que monta **a v2 em `/app`** — é a consola principal — e
+a v1 em `/v1/app`, a partir do `dist/` versionado.
 
 A v1 continua disponível porque é o que o artefacto validado entrega e o que as
 figuras da dissertação mostram; `/v1/app` é uma morada estável para ela, não uma

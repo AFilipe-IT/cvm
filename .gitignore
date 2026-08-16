@@ -31,6 +31,9 @@ pypirc*
 reports/*
 !reports/.gitkeep
 
+# Configurações de exemplo escritas por `caspar demo` (output, não versionar)
+caspar-demo/
+
 # Python
 __pycache__/
 *.pyc

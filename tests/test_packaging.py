@@ -23,8 +23,16 @@ about the files instead.
 from __future__ import annotations
 
 import re
-import tomllib
 from pathlib import Path
+
+# tomllib landed in 3.11, but pyproject declares requires-python = ">=3.10",
+# so on 3.10 (Ubuntu 22.04's system Python) importing it aborts collection of
+# this whole module — the suite reports an error instead of the packaging
+# facts below. tomli is the same parser under the pre-3.11 name.
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
 
 REPO = Path(__file__).resolve().parents[1]
 DOCKERFILE = REPO / "docker" / "caspar" / "Dockerfile"

@@ -53,7 +53,7 @@ def db_path():
         benchmark_source="findings test fixture",
     ))
     bs = base_score("N", "N", "L", "P", "P", "P")
-    ts = temporal_score(bs, "M", "H")
+    ts = temporal_score("N", "N", "L", "P", "P", "P", "M", "H")
     database.upsert_misconfiguration(Misconfiguration(
         target_name="dummy", directive="DangerousOption", bad_value="on",
         good_value="off", av="N", au="N", ac="L", c="P", i="P", a="P",
@@ -425,7 +425,7 @@ class TestScoringExplanation:
             gel="H", grl="H")
         m = Misconfiguration(**{**defaults, **kw})
         m.base_score = base_score(m.av, m.au, m.ac, m.c, m.i, m.a)
-        m.temporal_score = temporal_score(m.base_score, m.gel, m.grl)
+        m.temporal_score = temporal_score(m.av, m.au, m.ac, m.c, m.i, m.a, m.gel, m.grl)
         return m
 
     def test_every_metric_is_named_and_weighted(self):
@@ -505,7 +505,7 @@ class TestPerMetricJustifications:
             good_value="Prod", av="N", au="N", ac="L", c="P", i="N", a="N",
             gel="M", grl="H")
         m.base_score = base_score(m.av, m.au, m.ac, m.c, m.i, m.a)
-        m.temporal_score = temporal_score(m.base_score, m.gel, m.grl)
+        m.temporal_score = temporal_score(m.av, m.au, m.ac, m.c, m.i, m.a, m.gel, m.grl)
         m.narrative = narrative
         return m
 

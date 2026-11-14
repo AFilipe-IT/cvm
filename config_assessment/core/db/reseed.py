@@ -28,7 +28,7 @@ from pathlib import Path
 # existing volumes (e.g. corrected justifications, new built-in misconfigs).
 # It must match the base_db_version written into the dump itself, otherwise a
 # refresh either never fires or fires on every start.
-BASE_DB_VERSION = 4
+BASE_DB_VERSION = 5
 
 # The targets shipped in the image. Anything else in a working DB was installed
 # by the user (plugin add / fetch) and must be preserved across a refresh.

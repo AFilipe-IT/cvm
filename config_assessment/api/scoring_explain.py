@@ -147,12 +147,13 @@ def explain_score(m) -> dict | None:
     # disagree the row is stale, and `matches_stored` says so instead of
     # quietly showing whichever number happens to be at hand.
     base = scoring.base_score(av, au, ac, c, i, a)
-    temporal_value = scoring.temporal_score(base, gel, grl)
+    temporal_value = scoring.temporal_score(av, au, ac, c, i, a, gel, grl)
     stored = getattr(m, "temporal_score", None)
 
     f_impact = 10.41 * (1 - (1 - scoring._CIA[c]) * (1 - scoring._CIA[i])
                         * (1 - scoring._CIA[a]))
     f_exploit = 20 * scoring._AV[av] * scoring._AU[au] * scoring._AC[ac]
+    f_temporal_exploit = min(10.0, f_exploit * scoring._GEL[gel] * scoring._GRL[grl])
 
     return {
         "vector": f"AV:{av} AC:{ac} Au:{au} C:{c} I:{i} A:{a}",
@@ -188,10 +189,22 @@ def explain_score(m) -> dict | None:
                 "value": base,
             },
             {
+                # NISTIR 7502 §3.2.2: the temporal metrics modify the
+                # Exploitability component only — the Impact component is
+                # carried over unchanged from the base equation.
+                "label": "Temporal exploitability",
+                "formula": "min(10, exploitability × GEL × GRL)",
+                "substituted": (f"min(10, {f_exploit:.2f} × "
+                                f"{scoring._GEL[gel]:.3f} × "
+                                f"{scoring._GRL[grl]:.3f})"),
+                "value": round(f_temporal_exploit, 2),
+            },
+            {
                 "label": "Temporal score",
-                "formula": "base × GEL × GRL",
-                "substituted": (f"{base} × {scoring._GEL[gel]:.3f} × "
-                                f"{scoring._GRL[grl]:.3f}"),
+                "formula": ("((0.6 × impact) + (0.4 × temporal exploitability)"
+                            " − 1.5) × 1.176"),
+                "substituted": (f"((0.6 × {f_impact:.2f}) + "
+                                f"(0.4 × {f_temporal_exploit:.2f}) − 1.5) × 1.176"),
                 "value": temporal_value,
             },
         ],

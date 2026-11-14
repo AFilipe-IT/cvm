@@ -40,7 +40,7 @@ def db():
         benchmark_source="test fixture",
     ))
     bs = base_score("N", "N", "L", "P", "P", "P")
-    ts = temporal_score(bs, "M", "H")
+    ts = temporal_score("N", "N", "L", "P", "P", "P", "M", "H")
     for directive in ("DangerousOption", "SecondOption", "ThirdOption"):
         database.upsert_misconfiguration(Misconfiguration(
             target_name="dummy", directive=directive, bad_value="on",

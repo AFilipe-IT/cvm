@@ -33,6 +33,14 @@ from config_assessment.core.db.database import Database
 from config_assessment.core.runtime import scan as run_scan
 from cli._discovery import _discover_plugins
 
+# Versões fixadas por fixture. Um achado que expõe a versão do serviço é
+# amplificado quando essa versão tem exploits públicos, e sem versão explícita
+# o scan vai buscá-la ao binário instalado no hospedeiro — o que faria a
+# pontuação depender da máquina. A dissertação mede o nginx com a 1.24.0.
+PINNED_VERSIONS = {
+    "nginx.conf": "1.24.0",
+}
+
 FIXTURES = [
     "pod_vulnerable.yaml",
     "mysql_demo/my.cnf",
@@ -90,7 +98,8 @@ def main() -> int:
                 continue
             for _ in range(per_db):
                 with Database(db) as handle:
-                    result = run_scan(str(path), handle)
+                    result = run_scan(str(path), handle,
+                                      version=PINNED_VERSIONS.get(name))
                 seen[name].add(digest(result))
                 scores[name].add(result.global_temporal_score)
                 total += 1

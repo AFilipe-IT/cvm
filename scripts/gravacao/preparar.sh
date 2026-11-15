@@ -38,7 +38,9 @@ source .venv/bin/activate
 # A versão é fixada de propósito: é a que a dissertação mede, e fixá-la torna a
 # instalação imune ao índice do PyPI em cache (max-age=600) na máquina.
 pip install -q --upgrade pip
-pip install -q --no-cache-dir "cvm-caspar==$VER"
+# O extra [api] traz o uvicorn/fastapi, que o `caspar serve` precisa para as
+# tomadas da API e da consola web. A CLI funciona sem ele.
+pip install -q --no-cache-dir "cvm-caspar[api]==$VER"
 caspar --version
 
 # -- o corpus experimental ---------------------------------------------------

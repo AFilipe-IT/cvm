@@ -9,9 +9,15 @@ export COLUMNS=100
 T=${TEST_TARGET:-test_target}
 ok=0; bad=0
 
-score() { $CASPAR scan "$1" 2>&1 | grep -oE '[0-9]+\.[0-9] / 10' | head -1 | cut -d' ' -f1; }
-check() { # <ficheiro> <esperado> <rótulo>
-  local got; got=$(score "$1")
+# O quarto argumento de check() passa opções extra ao scan. Serve para fixar a
+# versão do serviço: a pontuação de um achado que expõe a versão (server_tokens,
+# ServerTokens, Banner) é amplificada quando essa versão tem exploits públicos,
+# e sem --service-version a versão vem do binário instalado no hospedeiro. Sem
+# fixar, o mesmo ficheiro dá 7.5 numa máquina com nginx 1.24.0 e 5.5 numa sem
+# nginx — a diferença é do hospedeiro, não do ficheiro nem da base.
+score() { $CASPAR scan "$1" ${4:-} 2>&1 | grep -oE '[0-9]+\.[0-9] / 10' | head -1 | cut -d' ' -f1; }
+check() { # <ficheiro> <esperado> <rótulo> [opções-extra]
+  local got; got=$(score "$1" "$2" "$3" "${4:-}")
   if [ "$got" = "$2" ]; then printf '  \033[32mOK\033[0m   %-34s %s\n' "$3" "$got"; ok=$((ok+1))
   else printf '  \033[31mFALHA\033[0m %-34s %s (esperado %s)\n' "$3" "${got:-sem score}" "$2"; bad=$((bad+1)); fi
 }
@@ -26,7 +32,7 @@ check "$T/Dockerfile.vulnerable"         9.0 "dockerfile"
 check "$T/httpd.conf"                    8.5 "apache-httpd  (sensível ao fix GEL/GRL)"
 check "$T/azure_storage_vulnerable.tf"   8.5 "azure-iac"
 check "$T/ssh_demo/sshd_config"          8.5 "ssh"
-check "$T/nginx.conf"                    7.5 "nginx"
+check "$T/nginx.conf"                    7.5 "nginx  (versão fixada: 1.24.0)" "--service-version 1.24.0"
 check "$T/ubuntu_demo/sysctl.conf"       5.8 "ubuntu"
 check "$T/redis_demo/redis.conf"         5.0 "redis"
 check "$T/tomcat_demo/tomcat.conf"       5.0 "tomcat"

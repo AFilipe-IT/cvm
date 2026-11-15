@@ -1,13 +1,14 @@
 """
 assets/video/determinismo.py
 ----------------------------
-Versão autónoma de scripts/determinism_scan.py para a gravação do vídeo.
+Versão autónoma de scripts/determinism_scan.py, para correr fora do repositório.
 
 O wheel publicado no PyPI (`cvm-caspar`) leva o pacote, não leva o diretório
 scripts/, pelo que `python -m scripts.determinism_scan` não existe numa
 instalação por pip. Este ficheiro repete a mesma medição usando apenas o que a
 instalação já tem (config_assessment + cli._discovery) e o corpus em
-test_target/, para que a Cena 7 possa ser gravada com `pip install cvm-caspar`.
+test_target/, para que a experiência de determinismo possa ser repetida a
+partir de `pip install cvm-caspar`, sem clonar o repositório.
 
 A lógica -- o que entra no digest e o que fica de fora -- é a de
 scripts/determinism_scan.py: o digest cobre o resultado da avaliação (score

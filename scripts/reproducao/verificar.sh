@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Pré-voo da gravação: confirma que a máquina reproduz os números da dissertação.
-# Uso:  CASPAR_DB=$PWD/ccss.db bash assets/video/verifica_gravacao.sh [caminho-do-caspar]
-# O argumento é o executável (por omissão `caspar`); num repo usa:
-#   bash assets/video/verifica_gravacao.sh ".venv/bin/python -m cli.main"
+# Confirma que esta máquina reproduz os números publicados na dissertação.
+# Uso:  bash verificar.sh [caminho-do-caspar]
+# O argumento é o executável (por omissão `caspar`); num clone do repositório:
+#   bash scripts/reproducao/verificar.sh ".venv/bin/python -m cli.main"
 set -u
 CASPAR=${1:-caspar}
 export COLUMNS=100

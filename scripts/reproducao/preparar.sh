@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
-# Prepara uma máquina limpa para reproduzir os números da dissertação com o
-# pacote publicado no PyPI. Uso:
+# Reprodução independente: prepara uma máquina limpa para repetir as medições
+# publicadas na dissertação a partir do pacote no PyPI, sem clonar o
+# repositório. Uso:
 #
-#   curl -fsSL https://raw.githubusercontent.com/AFilipe-IT/cvm/master/scripts/gravacao/preparar.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/AFilipe-IT/cvm/master/scripts/reproducao/preparar.sh | bash
 #
-# Não toca em nada fora do directório de trabalho (por omissão ~/cvm-gravacao)
+# Não toca em nada fora do directório de trabalho (por omissão ~/cvm-reproducao)
 # e não precisa de sudo: o pacote é instalado num venv próprio.
 set -euo pipefail
 
 VER=1.0.0
 KB=83b3ee01f415
-DIR=${1:-$HOME/cvm-gravacao}
+DIR=${1:-$HOME/cvm-reproducao}
 # Permite apontar para um clone local durante o desenvolvimento:
-#   BASE=file:///home/.../cvm/scripts/gravacao bash preparar.sh
-BASE=${BASE:-https://raw.githubusercontent.com/AFilipe-IT/cvm/master/scripts/gravacao}
+#   BASE=file:///home/.../cvm/scripts/reproducao bash preparar.sh
+BASE=${BASE:-https://raw.githubusercontent.com/AFilipe-IT/cvm/master/scripts/reproducao}
 
 say() { printf '\n\033[1m==\033[0m %s\n' "$1"; }
 die() { printf '\n\033[31merro:\033[0m %s\n' "$1" >&2; exit 1; }
@@ -56,7 +57,7 @@ fi
 # -- scripts de medição ------------------------------------------------------
 # Não vão no pacote (não são código do produto), por isso vêm do repositório.
 say "scripts de medição"
-for f in determinismo.py verifica_gravacao.sh; do
+for f in determinismo.py verificar.sh; do
   [ -f "$f" ] || $GET "$f" "$BASE/$f"
   printf '  %s\n' "$f"
 done
@@ -66,8 +67,8 @@ say "base de conhecimento canónica (caspar init)"
 caspar init
 
 # -- verificação -------------------------------------------------------------
-say "pré-voo: os dez pares contra os valores da dissertação"
-bash verifica_gravacao.sh caspar
+say "verificação: os dez pares contra os valores publicados"
+bash verificar.sh caspar
 got=$(caspar scan test_target/nginx.conf | grep -o 'sha256:[0-9a-f]*' | head -1)
 if [ "$got" != "sha256:$KB" ]; then
   die "digest da base de conhecimento é $got, esperado sha256:$KB — esta não é a versão que a dissertação mede"
